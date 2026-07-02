@@ -288,6 +288,12 @@ Recommended future hardening:
 
 ---
 
+# Mobile Companion
+
+The `termchat` experience is also available on mobile. Use [termchat-mobile](https://github.com/ishaan-jindal/termchat-mobile) as your official mobile client to join chatrooms seamlessly alongside terminal users.
+
+---
+
 # Roadmap
 
 Planned ideas:
