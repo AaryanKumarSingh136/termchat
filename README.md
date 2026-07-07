@@ -137,6 +137,12 @@ Use a custom WebSocket server:
 termchat FROG --server wss://my.server/ws
 ```
 
+Use a custom API server:
+
+```bash
+termchat FROG --server wss://my.server/ws --api https://my.server
+```
+
 Discover rooms:
 
 ```bash
@@ -206,6 +212,46 @@ Notes:
 * Default LAN port: `8080`
 * `--server` still works and takes priority over `--host` / `--port`
 * A UDP multicast beacon is broadcast every second, enabling `termchat discover --local`
+
+---
+
+# Docker
+
+Self-host the full stack with Docker Compose:
+
+```bash
+cp .env.example .env
+# Edit .env with your settings
+docker-compose up -d
+```
+
+Services:
+
+* `websocket` — WebSocket server on port 8080
+* `api` — API server on port 3000
+* `caddy` — Reverse proxy on ports 80/443
+* `watchtower` — Automatic container updates
+
+Images are published to [GHCR](https://github.com/users/ishaan-jindal/packages/container/package/termchat-websocket).
+
+---
+
+# Building from Source
+
+## Makefile
+
+```bash
+make build     # Build CLI binary to dist/termchat
+make install   # Install CLI, man page, and license
+make uninstall # Remove installed files
+make clean     # Remove built binary
+```
+
+## Manual build
+
+```bash
+CGO_ENABLED=0 go build -o dist/termchat ./cli
+```
 
 ---
 
