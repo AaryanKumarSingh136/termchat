@@ -44,6 +44,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(pongWait))
+
+		// Gorilla has no default read limit; cap frame size so a misbehaving
+		// client cannot buffer unbounded messages.
+		conn.SetReadLimit(4096)
 		return nil
 	})
 
@@ -530,7 +534,8 @@ func sanitizeInput(input string) string {
 }
 
 // truncateRunes limits s to at most max runes, never splitting a UTF-8
-// sequence.
+// sequence. Malformed input is normalized to replacement characters so the
+// result is always valid UTF-8.
 func truncateRunes(s string, max int) string {
 	if max <= 0 {
 		return ""
@@ -538,8 +543,10 @@ func truncateRunes(s string, max int) string {
 
 	runes := []rune(s)
 
+	// Re-encoding the rune slice normalizes invalid byte sequences to
+	// U+FFFD, guaranteeing valid UTF-8 output for any input.
 	if len(runes) <= max {
-		return s
+		return string(runes)
 	}
 
 	return string(runes[:max])

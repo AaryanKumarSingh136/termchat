@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"termchat/shared"
 )
@@ -19,12 +21,35 @@ type (
 
 var logger = log.New(os.Stderr, "", log.LstdFlags)
 
-var initialPassword string
+var (
+	initialPassword string
+
+	stopMu sync.Mutex
+	stopCh chan struct{}
+)
 
 // SetInitialPassword sets a password that will be applied to the first room
 // created on this server instance (used by `termchat host --password`).
 func SetInitialPassword(password string) {
 	initialPassword = password
+}
+
+// Stop gracefully shuts down the server started by StartServer. It is
+// idempotent and safe to call before StartServer.
+func Stop() {
+	stopMu.Lock()
+	c := stopCh
+	stopMu.Unlock()
+
+	if c == nil {
+		return
+	}
+
+	select {
+	case <-c:
+	default:
+		close(c)
+	}
 }
 
 func SetLogOutput(w io.Writer) {
@@ -58,16 +83,25 @@ func newMux() *http.ServeMux {
 func StartServer(addr string) error {
 	initBootstrapConfig()
 
+	stopMu.Lock()
+	stopCh = make(chan struct{})
+	c := stopCh
+	stopMu.Unlock()
+
 	server := &http.Server{
 		Addr:    addr,
 		Handler: newMux(),
 	}
 
-	// Handle graceful shutdown on SIGTERM/SIGINT
+	// Handle graceful shutdown on SIGTERM/SIGINT or Stop()
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-		<-sigCh
+
+		select {
+		case <-sigCh:
+		case <-c:
+		}
 
 		logger.Println("shutdown signal received, closing connections")
 
@@ -82,14 +116,21 @@ func StartServer(addr string) error {
 		for _, room := range roomsCopy {
 			room.Mutex.Lock()
 			for client := range room.Clients {
-				// Notify client of shutdown
-				select {
-				case client.Send <- Message{
+				client.trySend(Message{
 					Type: "system",
 					Text: "server shutting down",
-				}:
-				default:
-				}
+				})
+			}
+			room.Mutex.Unlock()
+		}
+
+		// Let writePump flush the shutdown notice before closing conns;
+		// closing immediately races the pending write and loses it.
+		time.Sleep(200 * time.Millisecond)
+
+		for _, room := range roomsCopy {
+			room.Mutex.Lock()
+			for client := range room.Clients {
 				// Close connection
 				client.Conn.Close()
 			}

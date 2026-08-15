@@ -57,6 +57,8 @@ func TestTruncateRunes(t *testing.T) {
 		{"emoji cut", "😀😀😀", 2, "😀😀"},
 		{"emoji exact", "😀😀", 2, "😀😀"},
 		{"mixed cut", "aé😀b", 2, "aé"},
+		{"invalid utf8 passthrough", "\xdb", 34, "\ufffd"},
+		{"invalid utf8 truncated", "\xdbhello", 3, "\ufffdhe"},
 	}
 
 	for _, c := range cases {

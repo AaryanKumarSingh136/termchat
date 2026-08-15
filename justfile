@@ -71,6 +71,19 @@ test-race:
 # Full CI gate: tidy, fmt, vet, build, race tests
 check: tidy-check fmt-check vet build test-race
 
+# Run everything CI runs, before committing
+pre-commit: check
+
+# Run the end-to-end tests only (real server, real CLI networking)
+test-e2e:
+    go test -race -run 'TestE2E' ./cli/
+
+# Generate and open a coverage report
+cover:
+    go test -coverprofile=coverage.out ./...
+    go tool cover -html=coverage.out
+    rm -f coverage.out
+
 # Build the server Docker image locally
 docker:
     docker build -f Dockerfile.server -t termchat-server:dev .
