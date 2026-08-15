@@ -81,7 +81,7 @@ jobs:
           ./cli
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/termchat-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
