@@ -117,72 +117,35 @@ func main() {
 
 	if opts.HostMode {
 		conn, err = connectLocalWebSocket(serverURL, localServerErrs)
-	} else {
-		conn, err = connectWebSocket(serverURL)
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Start writePump goroutine to serialize WebSocket writes
-	go writePump(conn)
-
-	// Send join message with password
-	conn.Send <- Message{
-		Type:     "join",
-		Nick:     nick,
-		Room:     room,
-		Password: opts.Password,
-	}
-
-	// Check for password rejection before starting TUI
-	if !opts.HostMode {
-		var firstMsg Message
-		err = conn.conn.ReadJSON(&firstMsg)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		if firstMsg.Type == "error" && firstMsg.Text == "invalid_password" {
-			// Prompt for password
-			fmt.Print("Room requires a password: ")
-			pass, _ := reader.ReadString('\n')
-			pass = strings.TrimSpace(pass)
+		// Start writePump goroutine to serialize WebSocket writes
+		go writePump(conn)
 
-			// Signal writePump to stop
-			close(conn.done)
-			conn.conn.Close()
-
-			// Reconnect with the password
-			conn, err = connectWebSocket(serverURL)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			// Restart writePump
-			go writePump(conn)
-
-			conn.Send <- Message{
-				Type:     "join",
-				Nick:     nick,
-				Room:     room,
-				Password: pass,
-			}
-
-			err = conn.conn.ReadJSON(&firstMsg)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if firstMsg.Type == "error" && firstMsg.Text == "invalid_password" {
-				fmt.Println("Wrong password.")
-				conn.conn.Close()
-				os.Exit(1)
-			}
+		// Send join message with password
+		conn.Send <- Message{
+			Type:     "join",
+			Nick:     nick,
+			Room:     room,
+			Password: opts.Password,
+		}
+	} else {
+		conn, err = connectWebSocket(serverURL)
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		// Push the first message back so the TUI can consume it
-		conn.firstMsg = &firstMsg
+		go writePump(conn)
+
+		// Check for password rejection before starting the TUI. joinRoom
+		// prompts on in when the room is locked, retries with the entered
+		// password, and stores the first message for the TUI to consume.
+		conn, err = joinRoom(conn, serverURL, room, nick, opts.Password, reader, os.Stdout)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	if cfg.Color != "" {
@@ -421,6 +384,70 @@ func startLocalServer(port int, password string) (<-chan error, error) {
 	case <-time.After(50 * time.Millisecond):
 		return errCh, nil
 	}
+}
+
+// joinRoom sends the join frame and reads the first response. When the room
+// is password-protected and the supplied password is wrong, it prompts on in
+// for a password, reconnects, and retries once. The first message is stored
+// on the returned connection for the TUI to consume. It returns the (possibly
+// reconnected) connection, or an error when the join failed outright.
+func joinRoom(conn *Connection, serverURL, room, nick, password string, in io.Reader, out io.Writer) (*Connection, error) {
+	conn.Send <- Message{
+		Type:     "join",
+		Nick:     nick,
+		Room:     room,
+		Password: password,
+	}
+
+	var firstMsg Message
+
+	if err := conn.conn.ReadJSON(&firstMsg); err != nil {
+		return nil, err
+	}
+
+	if firstMsg.Type != "error" || firstMsg.Text != "invalid_password" {
+		conn.firstMsg = &firstMsg
+
+		return conn, nil
+	}
+
+	fmt.Fprint(out, "Room requires a password: ")
+	pass, _ := bufio.NewReader(in).ReadString('\n')
+	pass = strings.TrimSpace(pass)
+
+	// Signal writePump to stop
+	close(conn.done)
+	conn.conn.Close()
+
+	// Reconnect with the password
+	conn, err := connectWebSocket(serverURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Restart writePump
+	go writePump(conn)
+
+	conn.Send <- Message{
+		Type:     "join",
+		Nick:     nick,
+		Room:     room,
+		Password: pass,
+	}
+
+	if err := conn.conn.ReadJSON(&firstMsg); err != nil {
+		return nil, err
+	}
+
+	if firstMsg.Type == "error" && firstMsg.Text == "invalid_password" {
+		conn.conn.Close()
+
+		return nil, errors.New("wrong password")
+	}
+
+	conn.firstMsg = &firstMsg
+
+	return conn, nil
 }
 
 func websocketURL(opts cliOptions) string {

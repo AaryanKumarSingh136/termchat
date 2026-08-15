@@ -23,6 +23,7 @@ var windowsBootstrapScript string
 
 var (
 	githubRepo       = "ishaan-jindal/termchat"
+	githubAPIBase    = "https://api.github.com"
 	publicBaseURL    = "http://localhost"
 	cachedCLIVersion string
 	versionMu        sync.RWMutex
@@ -60,6 +61,10 @@ func envOr(key, fallback string) string {
 func latestCLIVersion() string {
 	versionMu.RLock()
 	defer versionMu.RUnlock()
+
+	if cachedCLIVersion == "" {
+		return "cli-v0.0.0"
+	}
 
 	return cachedCLIVersion
 }
@@ -145,20 +150,21 @@ func fetchLatestCLIVersion() string {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	url := fmt.Sprintf(
-		"https://api.github.com/repos/%s/releases/latest",
+		"%s/repos/%s/releases/latest",
+		githubAPIBase,
 		githubRepo,
 	)
 
 	resp, err := client.Get(url)
 	if err != nil {
 		logger.Println(err)
-		return "cli-v0.0.0"
+		return ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		logger.Printf("github releases lookup returned %s", resp.Status)
-		return "cli-v0.0.0"
+		return ""
 	}
 
 	type release struct {
@@ -169,7 +175,7 @@ func fetchLatestCLIVersion() string {
 
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		logger.Println(err)
-		return "cli-v0.0.0"
+		return ""
 	}
 
 	return r.TagName
@@ -182,15 +188,19 @@ func refreshCLIVersionLoop() {
 
 	// Fetch immediately, then refresh periodically. Never blocks startup.
 	for {
-		version := fetchLatestCLIVersion()
-
-		if version != "" {
-			versionMu.Lock()
-			cachedCLIVersion = version
-			versionMu.Unlock()
-			logger.Println("updated latest cli version:", version)
-		}
+		refreshCLIVersionOnce()
 
 		<-ticker.C
+	}
+}
+
+func refreshCLIVersionOnce() {
+	version := fetchLatestCLIVersion()
+
+	if version != "" {
+		versionMu.Lock()
+		cachedCLIVersion = version
+		versionMu.Unlock()
+		logger.Println("updated latest cli version:", version)
 	}
 }

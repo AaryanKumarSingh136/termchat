@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"termchat/shared"
 
@@ -684,4 +685,426 @@ func TestConcurrentTraffic(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	close(stop)
 	wg.Wait()
+}
+
+func TestHistoryCap(t *testing.T) {
+	srv := startTestServer(t)
+
+	old := maxMessagesPerSecond
+	maxMessagesPerSecond = 100
+	t.Cleanup(func() { maxMessagesPerSecond = old })
+
+	a := joinRoom(t, srv, "HIST", "alice", "")
+	defer a.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	for i := 0; i < 40; i++ {
+		a.send(shared.Message{Type: "message", Text: fmt.Sprintf("m-%d", i)})
+	}
+
+	// The server processes messages asynchronously. Wait for all 40 echoes;
+	// an echo is sent only after the broadcast appended to history.
+	received := 0
+
+	deadline := time.After(5 * time.Second)
+
+	for received < 40 {
+		select {
+		case m := <-a.msgs:
+			if m.Type == "message" {
+				received++
+			}
+		case <-deadline:
+			t.Fatalf("only %d of 40 messages echoed", received)
+		}
+	}
+
+	room := roomState(t, "HIST")
+	room.Mutex.Lock()
+	hist := make([]Message, len(room.History))
+	copy(hist, room.History)
+	room.Mutex.Unlock()
+
+	if len(hist) != 30 {
+		t.Fatalf("history length = %d, want 30", len(hist))
+	}
+
+	if hist[0].Text != "m-10" || hist[len(hist)-1].Text != "m-39" {
+		t.Errorf("history window wrong: first=%q last=%q", hist[0].Text, hist[len(hist)-1].Text)
+	}
+
+	// A late joiner receives exactly the capped window.
+	b := joinRoom(t, srv, "HIST", "bob", "")
+	defer b.close()
+
+	replay := b.nextOfType("history")
+
+	if len(replay.Messages) != 30 {
+		t.Fatalf("late joiner history = %d messages, want 30", len(replay.Messages))
+	}
+
+	if replay.Messages[0].Text != "m-10" || replay.Messages[29].Text != "m-39" {
+		t.Errorf("late joiner history window wrong: first=%q last=%q",
+			replay.Messages[0].Text, replay.Messages[29].Text)
+	}
+}
+
+func TestMessageLengthTruncation(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "LENX", "alice", "")
+	defer a.close()
+
+	b := joinRoom(t, srv, "LENX", "bob", "")
+	defer b.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	b.send(shared.Message{Type: "message", Text: strings.Repeat("x", 600)})
+
+	msg := a.nextOfType("message")
+
+	if len(msg.Text) != 500 {
+		t.Errorf("message length = %d, want 500", len(msg.Text))
+	}
+
+	if !utf8.ValidString(msg.Text) {
+		t.Error("truncated message is not valid UTF-8")
+	}
+
+	// Multi-byte runes must be truncated by rune, never split.
+	b.send(shared.Message{Type: "message", Text: strings.Repeat("😀", 600)})
+
+	msg = a.nextOfType("message")
+
+	if got := utf8.RuneCountInString(msg.Text); got != 500 {
+		t.Errorf("emoji message rune count = %d, want 500", got)
+	}
+
+	if !utf8.ValidString(msg.Text) {
+		t.Error("emoji-truncated message is not valid UTF-8")
+	}
+
+	// Nicknames are truncated to 32 runes.
+	b.send(shared.Message{Type: "nick", NewNick: strings.Repeat("n", 40)})
+
+	if got := a.nextOfType("system").Text; !strings.Contains(got, strings.Repeat("n", 32)) {
+		t.Errorf("nick change message does not contain 32-rune nickname: %q", got)
+	}
+
+	users := a.nextOfType("users_list").Users
+
+	for _, u := range users {
+		if u.Nick == strings.Repeat("n", 32) {
+			return
+		}
+	}
+
+	t.Errorf("users list does not contain the truncated 32-rune nickname: %+v", users)
+}
+
+func TestPasswordRemoval(t *testing.T) {
+	srv := startTestServer(t)
+
+	host := joinRoom(t, srv, "PWRM", "host", "")
+	defer host.close()
+
+	host.nextOfType("history")
+	host.nextOfType("system")
+	host.nextOfType("users_list")
+
+	host.send(shared.Message{Type: "set_password", Password: "secret"})
+	host.nextOfType("system")
+
+	// Locked: joining without a password is rejected.
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(t, srv), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.WriteJSON(shared.Message{Type: "join", Nick: "x", Room: "PWRM"})
+
+	var reply shared.Message
+
+	if err := conn.ReadJSON(&reply); err != nil {
+		t.Fatalf("read error reply: %v", err)
+	}
+
+	if reply.Type != "error" || reply.Text != "invalid_password" {
+		t.Errorf("reply = %+v, want invalid_password", reply)
+	}
+	conn.Close()
+
+	// Host removes the password.
+	host.send(shared.Message{Type: "set_password", Password: ""})
+	host.nextOfType("system")
+
+	// Unlocked: joining without a password succeeds.
+	guest := joinRoom(t, srv, "PWRM", "guest", "")
+	defer guest.close()
+
+	guest.nextOfType("history")
+	guest.nextOfType("system")
+	guest.nextOfType("users_list")
+}
+
+func TestHostSuccessionChain(t *testing.T) {
+	srv := startTestServer(t)
+
+	// Joins are processed asynchronously, so join and drain sequentially.
+	a := joinRoom(t, srv, "CHAI", "alice", "")
+	defer a.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	b := joinRoom(t, srv, "CHAI", "bob", "")
+	defer b.close()
+
+	b.nextOfType("history")
+	b.nextOfType("system")
+	b.nextOfType("users_list")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	c := joinRoom(t, srv, "CHAI", "carol", "")
+	defer c.close()
+
+	c.nextOfType("history")
+	c.nextOfType("system")
+	c.nextOfType("users_list")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+	b.nextOfType("system")
+	b.nextOfType("users_list")
+
+	if host := hostOf(t, "CHAI"); host != "alice" {
+		t.Fatalf("host = %q, want alice", host)
+	}
+
+	a.close()
+
+	if got := c.nextOfType("system").Text; got != "alice left the room" {
+		t.Errorf("leave message = %q", got)
+	}
+
+	if got := c.nextOfType("system").Text; got != "bob is now the host" {
+		t.Errorf("succession message = %q", got)
+	}
+
+	if host := hostOf(t, "CHAI"); host != "bob" {
+		t.Fatalf("host after alice left = %q, want bob", host)
+	}
+
+	b.close()
+
+	if got := c.nextOfType("system").Text; got != "bob left the room" {
+		t.Errorf("leave message = %q", got)
+	}
+
+	if got := c.nextOfType("system").Text; got != "carol is now the host" {
+		t.Errorf("succession message = %q", got)
+	}
+
+	if host := hostOf(t, "CHAI"); host != "carol" {
+		t.Errorf("host after bob left = %q, want carol", host)
+	}
+}
+
+func TestIdleDisconnect(t *testing.T) {
+	srv := startTestServer(t)
+
+	old := idleTimeout
+	idleTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { idleTimeout = old })
+
+	c := joinRoom(t, srv, "IDLE", "idler", "")
+	defer c.close()
+
+	c.nextOfType("history")
+	c.nextOfType("system")
+	c.nextOfType("users_list")
+
+	time.Sleep(300 * time.Millisecond)
+
+	cleanupIdleClientsOnce()
+
+	// The read loop must hit an error and close the channel.
+	deadline := time.After(3 * time.Second)
+
+	for {
+		select {
+		case _, ok := <-c.msgs:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatal("client not disconnected after idle timeout")
+		}
+	}
+}
+
+func TestTypingExpiry(t *testing.T) {
+	srv := startTestServer(t)
+
+	old := typingExpiry
+	typingExpiry = 150 * time.Millisecond
+	t.Cleanup(func() { typingExpiry = old })
+
+	a := joinRoom(t, srv, "TYPE", "alice", "")
+	defer a.close()
+
+	b := joinRoom(t, srv, "TYPE", "bob", "")
+	defer b.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	b.send(shared.Message{Type: "typing"})
+
+	if !isTyping(a.nextOfType("users_list").Users, "bob") {
+		t.Fatal("bob not marked as typing")
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	cleanupTypingIndicatorsOnce()
+
+	if isTyping(a.nextOfType("users_list").Users, "bob") {
+		t.Fatal("bob still marked as typing after expiry")
+	}
+}
+
+func isTyping(users []UserInfo, nick string) bool {
+	for _, u := range users {
+		if u.Nick == nick {
+			return u.Typing
+		}
+	}
+
+	return false
+}
+
+func TestPingEmission(t *testing.T) {
+	srv := startTestServer(t)
+
+	old := pingPeriod
+	pingPeriod = 150 * time.Millisecond
+	t.Cleanup(func() { pingPeriod = old })
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(t, srv), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	conn.WriteJSON(shared.Message{Type: "join", Nick: "pinger", Room: "PING"})
+
+	pings := 0
+	conn.SetPingHandler(func(string) error {
+		pings++
+
+		return nil
+	})
+
+	conn.SetReadDeadline(time.Now().Add(700 * time.Millisecond))
+
+	for {
+		var m shared.Message
+
+		if err := conn.ReadJSON(&m); err != nil {
+			break
+		}
+	}
+
+	if pings == 0 {
+		t.Error("server did not emit any ping frames")
+	}
+}
+
+func TestRateLimitWindow(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "RATE", "alice", "")
+	defer a.close()
+
+	b := joinRoom(t, srv, "RATE", "bob", "")
+	defer b.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	for i := 0; i < 6; i++ {
+		b.send(shared.Message{Type: "message", Text: fmt.Sprintf("burst-%d", i)})
+	}
+
+	delivered := 0
+
+	collect := time.After(400 * time.Millisecond)
+
+	for {
+		select {
+		case m := <-a.msgs:
+			if m.Type == "message" {
+				delivered++
+			}
+		case <-collect:
+			if delivered != 5 {
+				t.Fatalf("burst delivered %d messages, want exactly 5", delivered)
+			}
+
+			goto afterWindow
+		}
+	}
+
+afterWindow:
+	// Once the one-second window passes, messages flow again.
+	time.Sleep(1100 * time.Millisecond)
+
+	b.send(shared.Message{Type: "message", Text: "after-window"})
+
+	if got := a.nextOfType("message").Text; got != "after-window" {
+		t.Fatalf("message after window = %q, want after-window", got)
+	}
+}
+
+func TestWhitespaceOnlyMessagesDropped(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "BLNK", "alice", "")
+	defer a.close()
+
+	b := joinRoom(t, srv, "BLNK", "bob", "")
+	defer b.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	b.send(shared.Message{Type: "message", Text: "   "})
+	b.send(shared.Message{Type: "message", Text: "\x1b[31m\x1b[0m"})
+
+	select {
+	case m := <-a.msgs:
+		if m.Type == "message" {
+			t.Fatalf("whitespace-only message was broadcast: %+v", m)
+		}
+	case <-time.After(400 * time.Millisecond):
+	}
 }

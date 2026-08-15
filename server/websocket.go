@@ -19,15 +19,18 @@ var upgrader = websocket.Upgrader{
 }
 
 const (
-	pongWait   = 60 * time.Second
-	pingPeriod = (pongWait * 9) / 10
+	maxMessageLength = 500
+	maxNickLength    = 32
+)
 
-	maxMessageLength   = 500
-	maxNickLength      = 32
-	maxHistoryMessages = 30
-
+// The following limits are variables so tests can shrink the time scales.
+var (
+	pongWait             = 60 * time.Second
+	pingPeriod           = (pongWait * 9) / 10
+	maxHistoryMessages   = 30
 	maxMessagesPerSecond = 5
 	idleTimeout          = 30 * time.Minute
+	typingExpiry         = 3 * time.Second
 )
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -548,39 +551,43 @@ func cleanupIdleClients() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		roomsMutex.RLock()
-		roomsCopy := make([]*Room, 0, len(rooms))
-		for _, room := range rooms {
-			roomsCopy = append(roomsCopy, room)
+		cleanupIdleClientsOnce()
+	}
+}
+
+func cleanupIdleClientsOnce() {
+	roomsMutex.RLock()
+	roomsCopy := make([]*Room, 0, len(rooms))
+	for _, room := range rooms {
+		roomsCopy = append(roomsCopy, room)
+	}
+	roomsMutex.RUnlock()
+
+	for _, room := range roomsCopy {
+
+		room.Mutex.Lock()
+
+		clients := make([]*Client, 0, len(room.Clients))
+
+		for client := range room.Clients {
+			clients = append(clients, client)
 		}
-		roomsMutex.RUnlock()
 
-		for _, room := range roomsCopy {
+		room.Mutex.Unlock()
 
-			room.Mutex.Lock()
+		for _, client := range clients {
+			client.mu.Lock()
+			idle := time.Since(client.LastActivity) > idleTimeout
+			nick := client.Nickname
+			client.mu.Unlock()
 
-			clients := make([]*Client, 0, len(room.Clients))
+			if idle {
+				logger.Printf(
+					"disconnecting idle client %s",
+					nick,
+				)
 
-			for client := range room.Clients {
-				clients = append(clients, client)
-			}
-
-			room.Mutex.Unlock()
-
-			for _, client := range clients {
-				client.mu.Lock()
-				idle := time.Since(client.LastActivity) > idleTimeout
-				nick := client.Nickname
-				client.mu.Unlock()
-
-				if idle {
-					logger.Printf(
-						"disconnecting idle client %s",
-						nick,
-					)
-
-					client.Conn.Close()
-				}
+				client.Conn.Close()
 			}
 		}
 	}
@@ -592,37 +599,41 @@ func cleanupTypingIndicators() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		roomsMutex.RLock()
-		roomsCopy := make([]*Room, 0, len(rooms))
-		for _, room := range rooms {
-			roomsCopy = append(roomsCopy, room)
+		cleanupTypingIndicatorsOnce()
+	}
+}
+
+func cleanupTypingIndicatorsOnce() {
+	roomsMutex.RLock()
+	roomsCopy := make([]*Room, 0, len(rooms))
+	for _, room := range rooms {
+		roomsCopy = append(roomsCopy, room)
+	}
+	roomsMutex.RUnlock()
+
+	for _, room := range roomsCopy {
+
+		room.Mutex.Lock()
+
+		changed := false
+
+		for client := range room.Clients {
+			client.mu.Lock()
+			if client.Typing &&
+				time.Since(client.LastTyping) > typingExpiry {
+
+				client.Typing = false
+				changed = true
+			}
+			client.mu.Unlock()
 		}
-		roomsMutex.RUnlock()
 
-		for _, room := range roomsCopy {
+		roomID := room.ID
 
-			room.Mutex.Lock()
+		room.Mutex.Unlock()
 
-			changed := false
-
-			for client := range room.Clients {
-				client.mu.Lock()
-				if client.Typing &&
-					time.Since(client.LastTyping) > 3*time.Second {
-
-					client.Typing = false
-					changed = true
-				}
-				client.mu.Unlock()
-			}
-
-			roomID := room.ID
-
-			room.Mutex.Unlock()
-
-			if changed {
-				broadcastUsersList(roomID)
-			}
+		if changed {
+			broadcastUsersList(roomID)
 		}
 	}
 }
