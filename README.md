@@ -225,11 +225,35 @@ Services:
 * `caddy` — Reverse proxy on ports 80/443 with automatic HTTPS
 * `watchtower` — Automatic container updates
 
+Configuration is read from `.env` (see `.env.example`):
+
+| Variable          | Purpose                                            |
+| ----------------- | -------------------------------------------------- |
+| `WS_HOST`         | Listen address (default `0.0.0.0`)                 |
+| `WS_PORT`         | Listen port (default `8080`)                       |
+| `PUBLIC_BASE_URL` | Public origin; the served `curl \| bash` one-liner downloads binaries and points clients at `PUBLIC_BASE_URL/ws` |
+| `GITHUB_REPO`     | Repo for release binary downloads (default `ishaan-jindal/termchat`) |
+
+The `curl -fsSL <host> | bash` one-liner is served by the WebSocket server
+itself — self-hosted deployments keep the full install flow and direct
+users at their own server automatically.
+
 Images are published to [GHCR](https://github.com/users/ishaan-jindal/packages/container/package/termchat-websocket).
 
 ---
 
 # Building from Source
+
+## just (recommended)
+
+The [justfile](justfile) covers the whole dev workflow:
+
+```bash
+just check     # full CI gate: tidy, fmt, vet, build, race-tested tests
+just build     # CLI binary to dist/termchat
+just cross     # cross-compile all 8 release platforms
+just server    # run the WebSocket server locally (port 8080)
+```
 
 ## Makefile
 
@@ -243,7 +267,8 @@ make clean     # Remove built binary
 ## Manual build
 
 ```bash
-CGO_ENABLED=0 go build -o dist/termchat ./cli
+CGO_ENABLED=0 go build -o dist/termchat ./cli           # CLI
+CGO_ENABLED=0 go build -o termchat-server ./server/cmd/server  # WebSocket server
 ```
 
 ---

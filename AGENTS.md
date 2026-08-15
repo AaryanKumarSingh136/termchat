@@ -30,7 +30,7 @@ make install      # packaging (binary, man page, license)
   - Lock order: `room.Mutex` → `client.mu`, never the reverse.
   - NEVER close `client.Send`; lifecycle uses the idempotent `done` channel (`client.close()`).
   - Broadcasts use `client.trySend()` (non-blocking, shutdown-aware).
-- New or changed server behavior MUST come with race-tested integration tests in `server/websocket_test.go` (real WebSocket clients against `handleWebSocket`).
+- New or changed server behavior MUST come with race-tested integration tests in `server/websocket_test.go` (real WebSocket clients against `handleWebSocket`) and `server/bootstrap_test.go` (HTTP bootstrap routes).
 - Rune-safe truncation (`truncateRunes`) — never byte-slice strings for nick/text truncation.
 - Server-side input sanitization strips ANSI escapes and control characters.
 - Only `message` type is broadcast from clients; all other client frames are ignored.
@@ -51,6 +51,7 @@ make install      # packaging (binary, man page, license)
 - `.github/workflows/ci.yml` — PR gate: tidy, gofmt, vet, build, `go test -race`, 8-platform cross-compile.
 - Tag `cli-v*` → `.github/workflows/cli.yml`: builds 8 binaries, generates `termchat-checksums.txt`, creates the GitHub Release via `gh`, then calls `aur.yml` (AUR package sync).
 - `websocket.yml` — GHCR image on `main` push, path-filtered; manually dispatchable.
+- Dependabot keeps `gomod` and `github-actions` dependencies updated; dependency review runs on every PR.
 - Secrets: `AUR_SSH_PRIVATE_KEY`. Repo variables: `TERMCHAT_WS_URL` (baked into the CLI via ldflags `-X main.DefaultWS`).
 - `main` is protected: PR + required checks (`lint-and-test`, `verify`). Never push directly.
 - Commit signing is mandatory (`git commit -s -S`).

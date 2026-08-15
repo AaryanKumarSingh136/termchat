@@ -5,11 +5,10 @@
 ### Removed
 
 - The separate API server is gone. The project is now server + client only:
-  - `api/`, `Dockerfile.api`, and the `api.yml` image workflow were deleted.
+  - `api/` and `Dockerfile.api` were deleted.
   - The CLI no longer calls `/api/new`; room codes are generated locally with
     `shared.GenerateRoomCode()`.
-  - The `--api` flag, `main.DefaultAPI` ldflags, and the `TERMCHAT_API_URL`
-    repo variable were removed.
+  - The `--api` flag and `main.DefaultAPI` ldflags were removed.
 - The `curl | bash` one-liner install flow moved into the WebSocket server:
   - Bootstrap scripts live in `server/scripts/` (embedded via `go:embed`).
   - The server now serves `/`, `/{room}`, `/win`, `/win/{room}` and
@@ -30,19 +29,6 @@
 - Docker healthcheck used `/dev/tcp`, which dash (`/bin/sh` on Debian slim)
   does not support — containers were always reported unhealthy. The server
   image now installs `curl` and probes `/healthz`.
-- The `websocket.yml` image workflow path filter now includes `go.mod` and
-  `go.sum`, so dependency bumps rebuild the image.
-- The CLI release workflow checks out the requested tag on `workflow_dispatch`
-  instead of building the dispatch ref while publishing `inputs.tag`.
-
-### Added
-
-- The server now serves the bootstrap one-liner (`curl -fsSL <host> | bash`)
-  and PowerShell flow directly; `/bin/{binary}` validates against a whitelist
-  of the 8 published release assets.
-
-### Fixed (from the CI/testing overhaul)
-
 - Critical server crash: concurrent `rooms` map reads in the `set_password`
   and legacy `users` handlers could trigger a fatal "concurrent map read and
   map write" panic, disconnecting every room. All map access now happens
@@ -52,8 +38,8 @@
   tracked with a per-client `done` channel (idempotent via `sync.Once`).
 - Data races on client state (nickname, color, typing, last activity) —
   all mutable client fields are now guarded by a per-client mutex.
-- Data race on the API server's cached CLI version — now guarded by
-  `sync.RWMutex`.
+- Data race on the cached CLI version (the GitHub API version cache now
+  lives in the server's bootstrap module) — guarded by `sync.RWMutex`.
 - Client messages of any type were previously broadcast to the room. Only
   `message` is broadcast now; everything else is ignored.
 - `GenerateRoomCode` had a modulo bias making characters A–D ~14% more
@@ -68,22 +54,11 @@
 - `scripts` moved under `server/scripts`; `go.work` removed — the project is
   a single Go module.
 
-### CI / Build
+### Added
 
-- CI now actually runs: `go vet`, `go build`, and `go test -race` cover all
-  packages (previously the module layout meant the root `./...` matched no
-  real code and the pipeline was permanently green).
-- Added `gofmt` and `go mod tidy -diff` checks.
-- Added a cross-compile matrix job covering all supported platforms.
-- Release workflow rewritten: `softprops/action-gh-release` (archived)
-  replaced with `gh release create`; the fragile `sleep 15` between build
-  and checksum jobs is gone (artifacts are assembled in one job); added
-  `concurrency` groups and `workflow_dispatch` support.
-- Added Dependabot, secret scanning (TruffleHog), and dependency review.
-- AUR publish workflow now writes the SSH key via an env var (multiline-safe)
-  instead of `echo` interpolation.
-- Docker images: pinned base images, non-root runtime user, healthchecks,
-  `.env` excluded from the build context.
+- The server now serves the bootstrap one-liner (`curl -fsSL <host> | bash`)
+  and PowerShell flow directly; `/bin/{binary}` validates against a whitelist
+  of the 8 published release assets.
 
 ## [cli-v1.1.1] - 2026-06-25
 

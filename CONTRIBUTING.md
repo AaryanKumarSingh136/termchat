@@ -30,10 +30,25 @@ This project is governed by the [Contributor Covenant](https://www.contributor-c
 ### Prerequisites
 
 - **Go 1.26+** — [Download](https://go.dev/dl/)
-- **Make** (optional, for convenience targets)
+- **just** (optional, recommended) — [Install](https://github.com/casey/just)
+- **Make** (optional, for packaging targets)
 
 The repository is a single Go module; any `go` command from the repo root
-covers all packages (`cli`, `api`, `server`, `shared`).
+covers all packages (`cli`, `server`, `shared`).
+
+### Development
+
+The [justfile](https://github.com/ishaan-jindal/termchat/blob/main/justfile)
+mirrors what CI enforces. Run `just check` before pushing anything:
+
+```bash
+just check        # full CI gate: tidy-check, fmt-check, vet, build, test -race
+just test-race    # tests only (race detector)
+just build        # CLI binary to dist/termchat
+just cross        # cross-compile all 8 release platforms
+just server       # run the WebSocket server locally (port 8080)
+just run          # run the CLI with arguments: just run -- FROG
+```
 
 ### Build
 
@@ -90,6 +105,8 @@ refactor: extract broadcast logic into separate function
 - Use meaningful variable names — avoid single-letter names outside short loops.
 - Keep functions focused and reasonably sized; extract helpers when a function exceeds ~60 lines.
 - Handle errors explicitly — never use `_` to ignore an error unless you have a good reason.
+- **Commit signing is mandatory.** Every commit must be signed off and
+  GPG/SSH-signed: `git commit -s -S`. Unsigned commits will not pass CI.
 
 ## Testing
 
@@ -97,7 +114,7 @@ refactor: extract broadcast logic into separate function
 # Run all tests
 go test ./...
 
-# Run tests with race detector
+# Run tests with race detector (required for server changes)
 go test -race ./...
 
 # Run tests for a specific package
@@ -108,16 +125,28 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
+The standard gate is `just check` (`go test -race ./...` included). CI runs
+the full suite under the race detector on every PR.
+
+New or changed server behavior MUST ship with integration tests in
+`server/websocket_test.go` (real WebSocket clients against the handlers) and
+`server/bootstrap_test.go` (HTTP bootstrap routes) — the concurrency stress
+test in `websocket_test.go` is what catches data races.
+
 We aim for good test coverage, especially on:
-- `server/` — broadcast logic, client cleanup, input sanitization
+- `server/` — broadcast logic, client cleanup, input sanitization, bootstrap routes
 - `shared/` — validation functions, protocol helpers
 - `cli/` — argument parsing
 
 ## Pull Request Process
 
+`main` is protected: direct pushes are blocked, and every PR must pass the
+required checks (`lint-and-test` and `verify` — the full CI gate plus an
+8-platform cross-compile).
+
 1. Ensure your code compiles: `go build ./...`
 2. Run `gofmt` and `go vet` with no errors.
-3. Run `go test ./...` and ensure all tests pass. Add tests for new functionality.
+3. Run `just check` (tidy, fmt, vet, build, `go test -race ./...`) and ensure all tests pass. Add tests for new functionality.
 4. Update the README or documentation if your change impacts usage.
 5. Reference the issue number in your PR description (e.g., `Fixes #123`).
 6. Provide a clear, concise description of your changes.
