@@ -262,7 +262,7 @@ func readPump(client *Client) {
 			if newPass == "" {
 				broadcastToRoom(client.RoomID, Message{
 					Type: "system",
-					Text: "Room password removed — room is now unlocked",
+					Text: "Room password removed - room is now unlocked",
 				})
 			} else {
 				broadcastToRoom(client.RoomID, Message{
@@ -415,7 +415,7 @@ func cleanupClient(client *Client) {
 
 		room.Mutex.Unlock()
 
-		// Broadcast now — client is no longer in the room, won't receive
+		// Broadcast now; client is no longer in the room, so it will not receive
 		broadcastToRoom(client.RoomID, Message{
 			Type: "system",
 			Text: client.nickname() + " left the room",

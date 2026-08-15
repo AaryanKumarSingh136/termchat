@@ -12,7 +12,7 @@ func FuzzSanitizeInput(f *testing.F) {
 	f.Add("a\tb\nc")
 	f.Add(strings.Repeat("x", 5000))
 	f.Add("\x00\x01\x02\x1b[2J")
-	f.Add("emoji 🙂🙃🫠")
+	f.Add("emoji \U0001F642\U0001F643\U0001FAE0")
 
 	f.Fuzz(func(t *testing.T, in string) {
 		out := sanitizeInput(in)
@@ -34,10 +34,10 @@ func FuzzSanitizeInput(f *testing.F) {
 }
 
 func FuzzTruncateRunes(f *testing.F) {
-	f.Add("héllo", 4)
-	f.Add("😀😀😀", 2)
+	f.Add("h\u00e9llo", 4)
+	f.Add("\U0001F600\U0001F600\U0001F600", 2)
 	f.Add("", 0)
-	f.Add("mixed aé😀b", 3)
+	f.Add("mixed a\u00e9\U0001F600b", 3)
 
 	f.Fuzz(func(t *testing.T, in string, max int) {
 		out := truncateRunes(in, max)

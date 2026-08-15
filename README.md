@@ -1,68 +1,56 @@
 # termchat
 
-Minimal anonymous terminal chatrooms.
+[![CI](https://github.com/ishaan-jindal/termchat/actions/workflows/ci.yml/badge.svg)](https://github.com/ishaan-jindal/termchat/actions?query=event%3Apush+branch%3Amain)
 
-Open a terminal → paste one command → instantly chat.
+Minimal anonymous terminal chatrooms. Open a terminal, paste one command, and
+instantly chat with anyone who has the room code.
 
-Built for quick collaboration, debugging sessions, pair programming, temporary communities, and internet-native realtime chat.
+Built for quick collaboration, debugging sessions, pair programming, and
+temporary communities - no signup, no browser tabs.
 
----
+## Why termchat?
 
-# Features
+- Anonymous ephemeral rooms with zero account creation
+- One command to install and join: `curl -fsSL <host> | bash`
+- A single server binary serves everything: WebSocket rooms, room
+  discovery, and the bootstrap installer flow
+- LAN host mode runs a server in your terminal, no deployment needed
+- Linux, macOS, Windows, and Android (Termux) support
 
-* Anonymous ephemeral chat rooms
-* Zero account creation
-* Realtime WebSocket messaging
-* LAN Host Mode for direct IP-based local rooms
-* Room discovery (online and LAN)
-* Room passwords (locked / unlocked rooms)
-* Host privileges with automatic succession
-* Modern terminal-native TUI
-* Sidebar user list with host indicator
-* Mention highlighting (`@user`)
-* Cross-platform bootstrap installer
-* Linux / macOS / Windows / Android (Termux) support
-* Auto-generated room IDs
-* Nickname colors
-* Responsive terminal layout
-* GitHub Releases binary delivery
-* Dockerized deployment
-* GitHub Actions CI/CD
-* GHCR container publishing
-* Lightweight single-binary CLI
+## Features
 
----
+Status: **Active**. Server and client, nothing else - the API server was
+removed; rooms, discovery, and bootstrap all live in one binary.
 
-# UI Preview
+**Chat:**
 
-The latest TUI includes:
+- Realtime WebSocket messaging with in-memory history (last 30 messages)
+- Room passwords (locked / unlocked rooms) with interactive prompt on join
+- Host privileges with automatic succession on host disconnect
+- Room discovery: online via `/discover`, LAN via UDP multicast beacon
 
-* Dedicated users sidebar
-* Better spacing and layout
-* Cleaner message rendering
-* Improved command hints
-* Status footer
-* Mention highlighting
-* Better input handling
-* Adaptive resizing
+**Terminal UI:**
 
-```text
-┌────────────────────────────────────────────────────────────────────────────┐
-│ [system] Alice joined the room                                             │
-│ Alice: Hey @Bob                                                            │
-│ Bob: sup                                                                   │
-│                                                                            │
-│ Commands: /help /clear /nick /color /password /quit                        │
-├────────────────────────────────────────────────────────────────────────────┤
-│ > Type a message...                                                        │
-└────────────────────────────────────────────────────────────────────────────┘
-```
+- Modern Bubble Tea TUI with a users sidebar
+- Mention highlighting (`@nickname`), nickname colors, input history
+- Typing indicators and a status footer
 
----
+**Hosting:**
 
-# Quick Start
+- Cloud rooms against any server: `termchat`
+- LAN host mode: `termchat host` embeds the server in-process
+- Self-hostable with Docker Compose: websocket + caddy + watchtower, with
+  automatic HTTPS
+- The `curl | bash` one-liner is served by your own server and points
+  clients at it automatically (`PUBLIC_BASE_URL`)
 
-## Linux / macOS
+**Delivery:**
+
+- GitHub Releases binary delivery for all platforms with a checksum file
+- AUR package (`ishaans-termchat-bin`)
+- GHCR container image
+
+## Quick Start
 
 Create a room:
 
@@ -76,140 +64,102 @@ Join a room:
 curl -fsSL https://termchat.sacred99.online/7WHB | bash
 ```
 
----
-
-## Windows (PowerShell)
-
-Create a room:
+Windows (PowerShell):
 
 ```powershell
 irm https://termchat.sacred99.online/win -OutFile termchat-bootstrap.ps1
 .\termchat-bootstrap.ps1
 ```
 
-Join a room:
+Or install a binary directly: grab it from the
+[Releases Page](https://github.com/ishaan-jindal/termchat/releases), or on
+Arch Linux via the AUR (`ishaans-termchat-bin`).
 
-```powershell
-irm https://termchat.sacred99.online/win/7WHB -OutFile termchat-bootstrap.ps1
-.\termchat-bootstrap.ps1
-```
-
-If PowerShell blocks scripts:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-```
-
----
-
-## Android / Termux
+Then:
 
 ```bash
-pkg install curl
-curl -fsSL https://termchat.sacred99.online | bash
+termchat          # create a new room
+termchat FROG     # join a room
+termchat host     # host a LAN room
+termchat discover # list online and LAN rooms
 ```
 
----
+## Quick Links
 
-# CLI Usage
+- [CLI Usage](#cli-usage) - commands and flags
+- [LAN Host Mode](#lan-host-mode) - host rooms from your terminal
+- [Docker](#docker) - self-host the full stack
+- [Man page](doc/termchat.1) - installed with `make install`
+- [Changelog](CHANGELOG.md) - what changed
 
-Create a cloud room:
+## CLI Usage
 
 ```bash
-termchat
+termchat                  # create a new room on the default server
+termchat FROG             # join a room
+termchat --room FROG      # join with an explicit flag
+termchat FROG --server wss://my.server/ws   # custom server
+termchat host [ROOM]      # LAN host mode (embeds the server)
+termchat host --password secret             # lock the room
+termchat FROG --host 192.168.1.42           # join a LAN host
+termchat discover         # list online and LAN rooms
+termchat discover --online | --local        # filter
 ```
 
-Join a cloud room:
+In-room commands: `/help`, `/clear`, `/nick NAME`, `/color #HEX`,
+`/password [NEWPASS]` (host only), `/quit`.
+
+## LAN Host Mode
+
+LAN Host Mode runs the WebSocket server, room manager, and local TUI in one
+process. Other users connect directly to your IP:
 
 ```bash
-termchat FROG
+termchat host FROG --port 9000 --password secret
 ```
 
-Join with an explicit room flag:
+A UDP multicast beacon is broadcast every second, so `termchat discover
+--local` finds your room. `--server` takes priority over `--host` / `--port`.
+
+## Room System
+
+Rooms are temporary and memory-only: created on join, deleted when empty,
+capped at 30 history messages. The first joiner becomes host; when the host
+disconnects, the next-oldest client succeeds (broadcast as a system
+message). Rooms are shareable via URL-style codes:
+
+```text
+https://termchat.sacred99.online/7WHB
+```
+
+## Security
+
+- ANSI escape and control-character sanitization, rune-safe truncation
+- Message length enforcement (500 runes) and a 4KB frame read limit
+- Room passwords for access control, 5 msgs/sec per-client rate limit
+- Idle connection cleanup (30 min) and buffered, shutdown-aware sends
+- Binary-name whitelist on `/bin/{binary}` redirects
+
+Recommended future hardening: global + per-room rate limits, join
+throttling, profanity / spam filtering, abuse detection.
+
+## Building from Source
+
+Use `just` (recommended) or the Makefile:
 
 ```bash
-termchat --room FROG
+just check     # full CI gate: tidy, fmt, vet, build, race-tested tests
+just build     # CLI binary to dist/termchat
+just cross     # cross-compile all 8 release platforms
+just server    # run the WebSocket server locally (port 8080)
 ```
-
-Use a custom WebSocket server:
 
 ```bash
-termchat FROG --server wss://my.server/ws
+make build     # Build CLI binary to dist/termchat
+make install   # Install CLI, man page, and license
 ```
 
-Discover rooms:
-
-```bash
-termchat discover
-termchat discover --online
-termchat discover --local
-```
-
-Show help:
-
-```bash
-termchat --help
-```
-
----
-
-# LAN Host Mode
-
-LAN Host Mode runs the WebSocket server, room manager, and local TUI in one process.
-Other users connect directly to the host's IP address.
-
-Host an auto-generated room:
-
-```bash
-termchat host
-```
-
-Host a specific room:
-
-```bash
-termchat host FROG
-```
-
-Host on a custom port:
-
-```bash
-termchat host FROG --port 9000
-```
-
-Host a password-protected room:
-
-```bash
-termchat host --password secret
-termchat host FROG --password secret
-```
-
-Join a LAN room:
-
-```bash
-termchat FROG --host 192.168.1.42
-```
-
-Join a LAN room with a password:
-
-```bash
-termchat FROG --host 192.168.1.42 --password secret
-```
-
-Join a LAN room on a custom port:
-
-```bash
-termchat FROG --host 192.168.1.42 --port 9000
-```
-
-Notes:
-
-* Default LAN port: `8080`
-* `--server` still works and takes priority over `--host` / `--port`
-* A UDP multicast beacon is broadcast every second, enabling `termchat discover --local`
-
----
-
-# Docker
+## Docker
 
 Self-host the full stack with Docker Compose:
 
@@ -219,61 +169,21 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-Services:
+Services: `websocket` (rooms, discovery, bootstrap scripts), `caddy`
+(reverse proxy with automatic HTTPS), `watchtower` (automatic updates).
 
-* `websocket` — WebSocket server (rooms, discovery, bootstrap scripts) on port 8080
-* `caddy` — Reverse proxy on ports 80/443 with automatic HTTPS
-* `watchtower` — Automatic container updates
-
-Configuration is read from `.env` (see `.env.example`):
+Configuration (see `.env.example`):
 
 | Variable          | Purpose                                            |
 | ----------------- | -------------------------------------------------- |
 | `WS_HOST`         | Listen address (default `0.0.0.0`)                 |
 | `WS_PORT`         | Listen port (default `8080`)                       |
-| `PUBLIC_BASE_URL` | Public origin; the served `curl \| bash` one-liner downloads binaries and points clients at `PUBLIC_BASE_URL/ws` |
+| `PUBLIC_BASE_URL` | Public origin; the served one-liner downloads binaries and points clients at `PUBLIC_BASE_URL/ws` |
 | `GITHUB_REPO`     | Repo for release binary downloads (default `ishaan-jindal/termchat`) |
-
-The `curl -fsSL <host> | bash` one-liner is served by the WebSocket server
-itself — self-hosted deployments keep the full install flow and direct
-users at their own server automatically.
 
 Images are published to [GHCR](https://github.com/users/ishaan-jindal/packages/container/package/termchat-websocket).
 
----
-
-# Building from Source
-
-## just (recommended)
-
-The [justfile](justfile) covers the whole dev workflow:
-
-```bash
-just check     # full CI gate: tidy, fmt, vet, build, race-tested tests
-just build     # CLI binary to dist/termchat
-just cross     # cross-compile all 8 release platforms
-just server    # run the WebSocket server locally (port 8080)
-```
-
-## Makefile
-
-```bash
-make build     # Build CLI binary to dist/termchat
-make install   # Install CLI, man page, and license
-make uninstall # Remove installed files
-make clean     # Remove built binary
-```
-
-## Manual build
-
-```bash
-CGO_ENABLED=0 go build -o dist/termchat ./cli           # CLI
-CGO_ENABLED=0 go build -o termchat-server ./server/cmd/server  # WebSocket server
-```
-
----
-
-# Supported Platforms
+## Supported Platforms
 
 | Platform         | Architectures            |
 | ---------------- | ------------------------ |
@@ -282,125 +192,20 @@ CGO_ENABLED=0 go build -o termchat-server ./server/cmd/server  # WebSocket serve
 | Windows          | amd64, arm64             |
 | Android / Termux | arm64                    |
 
----
+## Contributing
 
-# Commands
+Fixes and new features are greatly appreciated. Make sure to read our
+[contributing guidelines](CONTRIBUTING.md) first - commits must be signed
+(`git commit -s -S`) and pass `just pre-commit`.
 
-| Command            | Description                              |
-| ------------------ | ---------------------------------------- |
-| `/help`            | Show available commands                  |
-| `/clear`           | Clear chat history                       |
-| `/nick NAME`       | Change nickname                          |
-| `/color #HEX`      | Change nickname color                    |
-| `/password NEWPASS` | Set or change room password (host only) |
-| `/password`        | Remove room password (host only)         |
-| `/quit`            | Exit room                                |
+## Credits
 
-Notes:
+This project uses AI tools as development aids (drafting, iteration,
+reviews, tests, and documentation). Architecture, constraints, and final
+code decisions are owned by the human committers.
 
-* The online users panel is built directly into the UI.
-* `/users` command has been removed.
-* Mentions highlight automatically when using `@nickname`.
+The mobile companion is [termchat-mobile](https://github.com/ishaan-jindal/termchat-mobile).
 
----
+## License
 
-# Room System
-
-termchat rooms are:
-
-* Temporary
-* Memory-only
-* Automatically created on join
-* Deleted when empty
-* Shareable via URL-style room codes
-* Locked (password-protected) or unlocked
-
-The first user to join a room becomes the host. The host is shown with a
-`[host]` tag in the user list sidebar. When the host disconnects, the next
-oldest user by join time becomes the new host. A system message broadcasts
-the change.
-
-Example:
-
-```text
-https://termchat.sacred99.online/7WHB
-```
-
----
-
-# Security
-
-Current protections include:
-
-* WebSocket keepalive
-* Buffered outbound queues
-* Graceful disconnect handling
-* Inactive connection cleanup
-* Cross-platform bootstrap detection
-* Automatic binary fetching
-* ANSI escape sanitization
-* Message length enforcement
-* Room passwords for access control
-
-Recommended future hardening:
-
-* Global + per-room rate limits
-* Join throttling
-* Room validation hardening
-* Profanity / spam filtering
-* Abuse detection
-
----
-
-# Mobile Companion
-
-The `termchat` experience is also available on mobile. Use [termchat-mobile](https://github.com/ishaan-jindal/termchat-mobile) as your official mobile client to join chatrooms seamlessly alongside terminal users.
-
----
-
-# Roadmap
-
-Planned ideas:
-
-* File transfer
-* Message reactions
-* Terminal notifications
-* Persistent optional identities
-* End-to-end encryption experiments
-* Self-hosted one-command deployment
-* Rich markdown rendering
-* Multi-room support
-
----
-
-# Technologies
-
-* Go
-* Bubble Tea
-* Lip Gloss
-* Gorilla WebSocket
-* Docker
-* Caddy
-* GitHub Actions
-* GitHub Container Registry
-
----
-
-# Philosophy
-
-termchat is designed to feel:
-
-* Instant
-* Disposable
-* Lightweight
-* Terminal-first
-* Frictionless
-
-No signup.
-No browser tabs.
-
----
-
-# License
-
-MIT
+[MIT](LICENSE)

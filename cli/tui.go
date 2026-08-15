@@ -280,11 +280,11 @@ func (m Model) View() string {
 	scrollInfo := ""
 
 	if !m.viewport.AtTop() {
-		scrollInfo += " ↑"
+		scrollInfo += " ^"
 	}
 
 	if !m.viewport.AtBottom() {
-		scrollInfo += " ↓"
+		scrollInfo += " v"
 	}
 
 	messagesPanel := panelStyle.
@@ -309,7 +309,7 @@ func (m Model) View() string {
 		Render(m.input.View())
 
 	statusText := fmt.Sprintf(
-		"Connected • Room %s • %d users%s",
+		"Connected - Room %s - %d users%s",
 		m.room,
 		len(m.users),
 		scrollInfo,
@@ -317,7 +317,7 @@ func (m Model) View() string {
 
 	if m.IsHost {
 		statusText = fmt.Sprintf(
-			"SELF-HOSTED • Room %s • %s:%d • %d users%s",
+			"SELF-HOSTED - Room %s - %s:%d - %d users%s",
 			m.room,
 			m.HostIP,
 			m.HostPort,
@@ -354,7 +354,7 @@ func renderUsers(m Model) string {
 
 	header := usersHeaderStyle.Width(width - 2).Align(lipgloss.Center).Render("USERS")
 	lines = append(lines, header)
-	lines = append(lines, strings.Repeat("─", width-2))
+	lines = append(lines, strings.Repeat("-", width-2))
 	lines = append(lines, "")
 
 	for _, user := range m.users {
@@ -376,7 +376,7 @@ func renderUsers(m Model) string {
 		coloredNick := lipgloss.NewStyle().
 			Foreground(lipgloss.Color(user.Color)).
 			Bold(true).
-			Render("● " + nick)
+			Render("* " + nick)
 
 		line := fmt.Sprintf(
 			"%-12s%4s %s",

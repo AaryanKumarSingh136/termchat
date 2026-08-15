@@ -62,7 +62,7 @@ func TestIsValidRoomCode(t *testing.T) {
 		"FRO!",
 		"ab-c",
 		"AB1_",
-		"ππππ",
+		"\u03c0\u03c0\u03c0\u03c0",
 	}
 
 	for _, code := range invalid {

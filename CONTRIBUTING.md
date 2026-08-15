@@ -1,157 +1,169 @@
 # Contributing to termchat
 
-Thank you for your interest in contributing to termchat!
+Thank you for your interest in contributing! This document outlines the
+conventions and practices we follow. AI agents working in this repo must also
+follow [AGENTS.md](AGENTS.md), whose rules take precedence.
 
-## Table of Contents
+## Philosophy
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [Project Structure](#project-structure)
-- [Making Changes](#making-changes)
-- [Style Guidelines](#style-guidelines)
-- [Testing](#testing)
-- [Pull Request Process](#pull-request-process)
-- [Questions?](#questions)
+**KISS** - Keep It Simple, Stupid. As well as "boring" code. These are the
+guiding principles for all work.
 
-## Code of Conduct
-
-This project is governed by the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). By participating, you are expected to uphold this code. Please report unacceptable behavior to the project maintainer.
-
-## Getting Started
-
-1. **Open an Issue** — Before submitting a Pull Request, please open a corresponding issue to discuss your proposed changes, bug fix, or feature. This avoids wasted effort if the change is not a good fit.
-2. **Fork the repository** on GitHub.
-3. **Clone your fork** to your local machine.
-4. **Create a new branch** — Use a descriptive name like `feat/amazing-feature` or `fix/bug-description`.
-
-## Development Setup
-
-### Prerequisites
-
-- **Go 1.26+** — [Download](https://go.dev/dl/)
-- **just** (optional, recommended) — [Install](https://github.com/casey/just)
-- **Make** (optional, for packaging targets)
-
-The repository is a single Go module; any `go` command from the repo root
-covers all packages (`cli`, `server`, `shared`).
-
-### Development
-
-The [justfile](https://github.com/ishaan-jindal/termchat/blob/main/justfile)
-mirrors what CI enforces. Run `just check` before pushing anything:
-
-```bash
-just check        # full CI gate: tidy-check, fmt-check, vet, build, test -race
-just test-race    # tests only (race detector)
-just build        # CLI binary to dist/termchat
-just cross        # cross-compile all 8 release platforms
-just server       # run the WebSocket server locally (port 8080)
-just run          # run the CLI with arguments: just run -- FROG
-```
-
-### Build
-
-```bash
-# Build the CLI
-go build -o termchat ./cli
-
-# Build the WebSocket server
-go build -o termchat-server ./server/cmd/server
-```
-
-### Run
-
-```bash
-# Run the CLI locally (connects to production server by default)
-go run ./cli
-
-# Run a local host session (embeds server + CLI)
-go run ./cli host
-```
+- Prefer shallow package structure over deep nesting
+- Direct code over abstractions
+- Working software over perfect architecture
+- Simple solutions over clever ones
+- No non-ASCII characters in code and docs
 
 ## Project Structure
 
 ```
 termchat/
-  cli/          — Terminal UI client (Bubble Tea)
-  server/       — WebSocket server + room management + bootstrap scripts
-  server/scripts/ — Bootstrap installers (embedded into the server binary)
-  shared/       — Shared types, validation, constants
-  caddy/        — Reverse proxy config
+  cli/              # Terminal UI client (Bubble Tea)
+  server/           # WebSocket server, rooms, host succession
+  server/cmd/server # Server binary entry point
+  server/scripts/   # Bootstrap installers (embedded via go:embed)
+  shared/           # Protocol types, validation, room codes
+  caddy/            # Reverse proxy config
 ```
 
-## Making Changes
+**Package Guidelines**:
 
-### What to Work On
+- `cli/` - TUI, argument parsing, LAN host mode (embeds the server in-process)
+- `server/` - WebSocket protocol, room lifecycle, bootstrap HTTP routes
+- `shared/` - Types both binaries use; change it and both need testing
+- There is no separate API server; the server serves everything
 
-Check the [open issues](https://github.com/ishaan-jindal/termchat/issues) for `good first issue` or `help wanted` labels. If you want to work on something not listed, open an issue first.
+**Don't create**:
 
-### Commit Messages
+- Deep nesting like `pkg/application/container/`
+- Abstraction layers "for future flexibility"
 
-Write clear, concise commit messages that explain the "why" behind your changes:
+## Build and Test Commands
+
+Use `just` (see `just --list`); it mirrors what CI enforces:
+
+```bash
+just --list       # Show all available commands
+just pre-commit   # Run before committing (tidy, fmt, vet, build, race tests)
+just check        # Same as pre-commit
+just test-race    # Tests under the race detector
+just test-e2e     # End-to-end suite (real server, real CLI networking)
+just cross        # Cross-compile all 8 release platforms
+just server       # Run the WebSocket server locally (port 8080)
+```
+
+Prerequisites: Go 1.26+, `just` (recommended), `make` (for packaging only).
+
+## Code Style
+
+### Naming
+
+Prefer Go-style concise names over verbose ones:
+
+| Prefer    | Avoid            |
+| --------- | ---------------- |
+| `trySend` | `AttemptSend`    |
+| `mu`      | `wellKnownMu`    |
+| `nick`    | `nicknameString` |
+| `err`     | `errorResult`    |
+
+### Comments
+
+- All exported functions and types need doc comments ending with a period
+- No misleading comments - if code is self-explanatory, don't comment
+- Comments are code: keep them as short as what they explain, and delete
+  them when the code already says it
+
+### Unused parameters
+
+Use `_` for unused parameters rather than ignoring in the function body:
+
+```go
+// Preferred
+func (t *logTerminal) Read(_ []byte) (int, error) {
+
+// Avoid
+func (t *logTerminal) Read(p []byte) (int, error) {
+    _ = p
+```
+
+### Error handling
+
+Return errors, don't panic:
+
+```go
+if err != nil {
+    return fmt.Errorf("joining room %s: %w", name, err)
+}
+```
+
+### Commit messages
+
+Use conventional commit format with a scope:
 
 ```
-feat: add /users command to list room members inline
-fix: handle empty room code gracefully on join
-refactor: extract broadcast logic into separate function
+<type>(<scope>): <description>
 ```
 
-## Style Guidelines
+Types: `fix`, `feat`, `refactor`, `test`, `docs`, `ci`, `chore`.
 
-- Run `gofmt` on all Go files before committing.
-- Run `go vet ./...` and fix any warnings.
-- Follow standard Go conventions from [Effective Go](https://go.dev/doc/effective_go).
-- Use meaningful variable names — avoid single-letter names outside short loops.
-- Keep functions focused and reasonably sized; extract helpers when a function exceeds ~60 lines.
-- Handle errors explicitly — never use `_` to ignore an error unless you have a good reason.
-- **Commit signing is mandatory.** Every commit must be signed off and
-  GPG/SSH-signed: `git commit -s -S`. Unsigned commits will not pass CI.
+Scopes: `cli`, `server`, `shared`, `docs`, `ci`.
+
+Keep the message to 1-3 lines. Every commit must be signed off and
+GPG/SSH-signed: `git commit -s -S`. Unsigned commits will not pass CI.
+
+### Changelog
+
+[CHANGELOG.md](CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Add the entry in the same commit as the change, under the unreleased heading,
+in `Added`/`Changed`/`Fixed`/`Removed`.
+
+An entry is needed when a user can observe the difference:
+
+- behavior, CLI flags, or command output
+- a bug they could have hit, even when the cause was internal
+- a change to the WebSocket protocol or bootstrap flow
+
+No entry for contributor docs (`AGENTS.md`, `CONTRIBUTING.md`), CI/CD
+workflows, dev tooling (`justfile`), tests, or refactors with no observable
+difference.
+
+Write what changed for the reader, not what you did to the code - "room
+passwords no longer leak into history", not "added a filter to the
+broadcaster".
 
 ## Testing
 
-```bash
-# Run all tests
-go test ./...
+Tests are categorized:
 
-# Run tests with race detector (required for server changes)
-go test -race ./...
+- **Unit** - pure functions and helpers (sanitize, truncate, validation)
+- **Integration** - real WebSocket clients and HTTP requests against the
+  handlers (`server/websocket_test.go`, `server/bootstrap_test.go`)
+- **End-to-end** - the real server binary + the CLI's real networking layer
+  (`cli/e2e_test.go`), including a SIGTERM graceful-shutdown test
+- **Fuzz** - `Fuzz*` targets in each package; CI runs them with a bounded
+  fuzztime
 
-# Run tests for a specific package
-go test ./server/...
-
-# View coverage
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-```
-
-The standard gate is `just check` (`go test -race ./...` included). CI runs
-the full suite under the race detector on every PR.
-
-New or changed server behavior MUST ship with integration tests in
-`server/websocket_test.go` (real WebSocket clients against the handlers) and
-`server/bootstrap_test.go` (HTTP bootstrap routes) — the concurrency stress
-test in `websocket_test.go` is what catches data races.
-
-We aim for good test coverage, especially on:
-- `server/` — broadcast logic, client cleanup, input sanitization, bootstrap routes
-- `shared/` — validation functions, protocol helpers
-- `cli/` — argument parsing
+All tests must pass under the race detector. New or changed server behavior
+MUST ship with race-tested integration tests. If a fuzz target finds a
+crash, fix the code, not the test.
 
 ## Pull Request Process
 
 `main` is protected: direct pushes are blocked, and every PR must pass the
-required checks (`lint-and-test` and `verify` — the full CI gate plus an
+required checks (`lint-and-test` and `verify` - the full CI gate plus an
 8-platform cross-compile).
 
 1. Ensure your code compiles: `go build ./...`
-2. Run `gofmt` and `go vet` with no errors.
-3. Run `just check` (tidy, fmt, vet, build, `go test -race ./...`) and ensure all tests pass. Add tests for new functionality.
-4. Update the README or documentation if your change impacts usage.
-5. Reference the issue number in your PR description (e.g., `Fixes #123`).
-6. Provide a clear, concise description of your changes.
-7. Wait for feedback and address any requested changes.
+2. Run `just pre-commit` and ensure everything passes. Add tests for new
+   functionality.
+3. Update the README or documentation if your change impacts usage.
+4. Reference the issue number in your PR description (e.g., `Fixes #123`).
+5. Provide a clear, concise description of your changes.
+6. Wait for feedback and address any requested changes.
 
 ## Questions?
 
-Open a [discussion](https://github.com/ishaan-jindal/termchat/discussions) or ask in the issue you're working on.
+Open a [discussion](https://github.com/ishaan-jindal/termchat/discussions)
+or ask in the issue you're working on.

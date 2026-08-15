@@ -780,7 +780,7 @@ func TestMessageLengthTruncation(t *testing.T) {
 	}
 
 	// Multi-byte runes must be truncated by rune, never split.
-	b.send(shared.Message{Type: "message", Text: strings.Repeat("😀", 600)})
+	b.send(shared.Message{Type: "message", Text: strings.Repeat("\U0001F600", 600)})
 
 	msg = a.nextOfType("message")
 

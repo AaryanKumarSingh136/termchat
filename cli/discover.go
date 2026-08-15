@@ -62,9 +62,9 @@ func discoverBaseURL(opts cliOptions) string {
 // --- Online discovery ---
 
 func discoverOnline(apiURL string) {
-	fmt.Println("╔══════════════════════════════════════╗")
-	fmt.Println("║          ONLINE ROOMS                ║")
-	fmt.Println("╚══════════════════════════════════════╝")
+	fmt.Println("========================================")
+	fmt.Println("          ONLINE ROOMS")
+	fmt.Println("========================================")
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
@@ -104,10 +104,10 @@ func discoverOnline(apiURL string) {
 	fmt.Println()
 	fmt.Printf("  %-8s %-10s %-8s %s\n", "ROOM", "HOST", "USERS", "STATUS")
 	fmt.Printf("  %-8s %-10s %-8s %s\n",
-		strings.Repeat("─", 6),
-		strings.Repeat("─", 8),
-		strings.Repeat("─", 5),
-		strings.Repeat("─", 10))
+		strings.Repeat("-", 6),
+		strings.Repeat("-", 8),
+		strings.Repeat("-", 5),
+		strings.Repeat("-", 10))
 
 	for _, room := range rooms {
 		status := "[open]"
@@ -117,7 +117,7 @@ func discoverOnline(apiURL string) {
 
 		host := room.HostNick
 		if host == "" {
-			host = "—"
+			host = "-"
 		}
 
 		if len(host) > 8 {
@@ -141,9 +141,9 @@ type lanBeacon struct {
 }
 
 func discoverLAN() {
-	fmt.Println("╔══════════════════════════════════════╗")
-	fmt.Println("║           LAN ROOMS                  ║")
-	fmt.Println("╚══════════════════════════════════════╝")
+	fmt.Println("========================================")
+	fmt.Println("           LAN ROOMS")
+	fmt.Println("========================================")
 	fmt.Println("  Scanning local network...")
 
 	beacons := listenForBeacons(3 * time.Second)
@@ -156,15 +156,15 @@ func discoverLAN() {
 	fmt.Println()
 	fmt.Printf("  %-8s %-10s %-18s %s\n", "ROOM", "HOST", "ADDRESS", "PORT")
 	fmt.Printf("  %-8s %-10s %-18s %s\n",
-		strings.Repeat("─", 6),
-		strings.Repeat("─", 8),
-		strings.Repeat("─", 16),
-		strings.Repeat("─", 5))
+		strings.Repeat("-", 6),
+		strings.Repeat("-", 8),
+		strings.Repeat("-", 16),
+		strings.Repeat("-", 5))
 
 	for _, b := range beacons {
 		host := b.Host
 		if host == "" {
-			host = "—"
+			host = "-"
 		}
 		if len(host) > 8 {
 			host = host[:8]

@@ -27,7 +27,7 @@
 ### Fixed
 
 - Docker healthcheck used `/dev/tcp`, which dash (`/bin/sh` on Debian slim)
-  does not support — containers were always reported unhealthy. The server
+  does not support - containers were always reported unhealthy. The server
   image now installs `curl` and probes `/healthz`.
 - Critical server crash: concurrent `rooms` map reads in the `set_password`
   and legacy `users` handlers could trigger a fatal "concurrent map read and
@@ -36,13 +36,13 @@
 - Server crash: "send on closed channel" panic when broadcasting to a
   disconnecting client. `client.Send` is never closed anymore; lifecycle is
   tracked with a per-client `done` channel (idempotent via `sync.Once`).
-- Data races on client state (nickname, color, typing, last activity) —
+- Data races on client state (nickname, color, typing, last activity) -
   all mutable client fields are now guarded by a per-client mutex.
 - Data race on the cached CLI version (the GitHub API version cache now
-  lives in the server's bootstrap module) — guarded by `sync.RWMutex`.
+  lives in the server's bootstrap module) - guarded by `sync.RWMutex`.
 - Client messages of any type were previously broadcast to the room. Only
   `message` is broadcast now; everything else is ignored.
-- `GenerateRoomCode` had a modulo bias making characters A–D ~14% more
+- `GenerateRoomCode` had a modulo bias making characters A-D ~14% more
   likely. Replaced with rejection sampling for uniform distribution.
 - `IsValidRoomCode` no longer silently normalizes input; it validates the
   exact code format (callers normalize first).
@@ -51,7 +51,7 @@
 - Bootstrap scripts are embedded into the server binary (`go:embed`) and
   no longer read from disk at request time.
 - Health check endpoint (`/healthz`) on the WebSocket server.
-- `scripts` moved under `server/scripts`; `go.work` removed — the project is
+- `scripts` moved under `server/scripts`; `go.work` removed - the project is
   a single Go module.
 
 ### Added
@@ -115,7 +115,7 @@ No user-facing changes.
 
 ### Added
 
-- Typing indicator — shows `[...]` next to users currently typing
+- Typing indicator - shows `[...]` next to users currently typing
 
 ## [cli-v0.4.2] - 2026-05-31
 

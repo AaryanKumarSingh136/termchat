@@ -29,7 +29,7 @@ func connectWebSocket(server string) (*Connection, error) {
 
 // writePump is the sole goroutine that writes to the WebSocket connection.
 // It ensures gorilla/websocket's contract of a single concurrent writer is maintained.
-// writePump never closes conn.done — main() owns the done lifecycle.
+// writePump never closes conn.done; main() owns the done lifecycle.
 func writePump(conn *Connection) {
 	defer conn.conn.Close()
 

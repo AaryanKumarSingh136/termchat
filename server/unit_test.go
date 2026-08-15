@@ -28,7 +28,7 @@ func TestSanitizeInput(t *testing.T) {
 		{"newline preserved", "line1\nline2", "line1\nline2"},
 		{"trimmed", "  spaced  ", "spaced"},
 		{"empty", "", ""},
-		{"emoji untouched", "hi 🙂", "hi 🙂"},
+		{"emoji untouched", "hi \U0001F642", "hi \U0001F642"},
 	}
 
 	for _, c := range cases {
@@ -53,10 +53,10 @@ func TestTruncateRunes(t *testing.T) {
 		{"negative", "hello", -1, ""},
 		{"empty", "", 5, ""},
 		{"ascii cut", "hello", 3, "hel"},
-		{"multibyte boundary", "héllo", 4, "héll"},
-		{"emoji cut", "😀😀😀", 2, "😀😀"},
-		{"emoji exact", "😀😀", 2, "😀😀"},
-		{"mixed cut", "aé😀b", 2, "aé"},
+		{"multibyte boundary", "h\u00e9llo", 4, "h\u00e9ll"},
+		{"emoji cut", "\U0001F600\U0001F600\U0001F600", 2, "\U0001F600\U0001F600"},
+		{"emoji exact", "\U0001F600\U0001F600", 2, "\U0001F600\U0001F600"},
+		{"mixed cut", "a\u00e9\U0001F600b", 2, "a\u00e9"},
 		{"invalid utf8 passthrough", "\xdb", 34, "\ufffd"},
 		{"invalid utf8 truncated", "\xdbhello", 3, "\ufffdhe"},
 	}
