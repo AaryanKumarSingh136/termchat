@@ -65,3 +65,41 @@ func TestParseHelp(t *testing.T) {
 		t.Fatal("expected help flag")
 	}
 }
+
+func TestDiscoverBaseURL(t *testing.T) {
+	opts, err := parseArgs([]string{"discover"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := discoverBaseURL(opts); got != "https://termchat.sacred99.online" {
+		t.Fatalf("default base = %q", got)
+	}
+
+	opts, err = parseArgs([]string{"discover", "--server", "ws://example.test/ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := discoverBaseURL(opts); got != "http://example.test" {
+		t.Fatalf("server-derived base = %q", got)
+	}
+
+	opts, err = parseArgs([]string{"discover", "--server", "wss://example.test/ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := discoverBaseURL(opts); got != "https://example.test" {
+		t.Fatalf("wss-derived base = %q", got)
+	}
+
+	opts, err = parseArgs([]string{"discover", "--host", "192.168.1.42", "--port", "9000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := discoverBaseURL(opts); got != "http://192.168.1.42:9000" {
+		t.Fatalf("host-derived base = %q", got)
+	}
+}

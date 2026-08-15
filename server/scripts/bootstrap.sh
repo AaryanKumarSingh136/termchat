@@ -1,7 +1,8 @@
 #!/bin/bash
 
 ROOM="{{.Room}}"
-API_URL="{{.ApiURL}}"
+BASE_URL="{{.BaseURL}}"
+WS_URL="${BASE_URL/http/ws}/ws"
 
 OS=$(uname -s)
 ARCH=$(uname -m)
@@ -62,7 +63,7 @@ if [ ! -f "$BINARY_PATH" ] || \
 
     echo "Downloading $BINARY..."
 
-    curl -fsSL "$API_URL/bin/$BINARY" -o "$BINARY_PATH"
+    curl -fsSL "$BASE_URL/bin/$BINARY" -o "$BINARY_PATH"
 
     chmod +x "$BINARY_PATH"
 
@@ -73,4 +74,4 @@ fi
 
 echo "Launching room $ROOM..."
 
-exec "$BINARY_PATH" "$ROOM"
+exec "$BINARY_PATH" "$ROOM" --server "$WS_URL"

@@ -137,12 +137,6 @@ Use a custom WebSocket server:
 termchat FROG --server wss://my.server/ws
 ```
 
-Use a custom API server:
-
-```bash
-termchat FROG --server wss://my.server/ws --api https://my.server
-```
-
 Discover rooms:
 
 ```bash
@@ -227,9 +221,8 @@ docker-compose up -d
 
 Services:
 
-* `websocket` — WebSocket server on port 8080
-* `api` — API server on port 3000
-* `caddy` — Reverse proxy on ports 80/443
+* `websocket` — WebSocket server (rooms, discovery, bootstrap scripts) on port 8080
+* `caddy` — Reverse proxy on ports 80/443 with automatic HTTPS
 * `watchtower` — Automatic container updates
 
 Images are published to [GHCR](https://github.com/users/ishaan-jindal/packages/container/package/termchat-websocket).
@@ -361,7 +354,6 @@ Planned ideas:
 * Bubble Tea
 * Lip Gloss
 * Gorilla WebSocket
-* Chi
 * Docker
 * Caddy
 * GitHub Actions

@@ -33,11 +33,7 @@ func resetState(t *testing.T) {
 func startTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", handleWebSocket)
-	mux.HandleFunc("/discover", handleDiscover)
-
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(newMux())
 
 	t.Cleanup(func() {
 		srv.Close()

@@ -1,7 +1,9 @@
 param(
     [string]$Room = "{{.Room}}",
-    [string]$ApiUrl = "{{.ApiURL}}"
+    [string]$BaseUrl = "{{.BaseURL}}"
 )
+
+$wsUrl = $BaseUrl -replace '^http', 'ws'
 
 $arch = $env:PROCESSOR_ARCHITECTURE
 
@@ -55,7 +57,7 @@ if ($needsDownload) {
     Write-Host "Downloading $binary..."
 
     Invoke-WebRequest `
-        -Uri "$ApiUrl/bin/$binary" `
+        -Uri "$BaseUrl/bin/$binary" `
         -OutFile $binaryPath
 
     Set-Content `
@@ -69,6 +71,6 @@ Write-Host "Launching room $Room..."
 
 Start-Process `
     -FilePath $binaryPath `
-    -ArgumentList "$Room" `
+    -ArgumentList "$Room", "--server", "$wsUrl" `
     -NoNewWindow `
     -Wait

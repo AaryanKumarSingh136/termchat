@@ -55,6 +55,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -74,7 +76,6 @@ jobs:
           -ldflags "\
           -s -w \
           -X main.Version=${VERSION} \
-          -X main.DefaultAPI=${{ vars.TERMCHAT_API_URL }} \
           -X main.DefaultWS=${{ vars.TERMCHAT_WS_URL }}" \
           -o dist/termchat-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} \
           ./cli
@@ -100,6 +101,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: Resolve tag
         id: tag

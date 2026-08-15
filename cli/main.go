@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -24,9 +23,9 @@ type (
 )
 
 var (
-	Version    = "dev"
-	DefaultAPI = "https://termchat.sacred99.online"
-	DefaultWS  = "wss://termchat.sacred99.online/ws"
+	Version     = "dev"
+	DefaultWS   = "wss://termchat.sacred99.online/ws"
+	DefaultBase = "https://termchat.sacred99.online"
 )
 
 const defaultLANPort = 8080
@@ -39,7 +38,6 @@ type cliOptions struct {
 	Server    string
 	ServerSet bool
 
-	API  string
 	Host string
 	Port int
 
@@ -71,7 +69,7 @@ func main() {
 		runDiscover(discoverOptions{
 			Online: opts.OnlineOnly,
 			Local:  opts.LocalOnly,
-			API:    opts.API,
+			Base:   discoverBaseURL(opts),
 		})
 		return
 	}
@@ -85,7 +83,7 @@ func main() {
 			log.Fatal(err)
 		}
 	} else if room == "" {
-		room = fetchNewRoom(opts.API)
+		room = shared.GenerateRoomCode()
 		fmt.Println("Created Room:", room)
 	}
 
@@ -229,7 +227,6 @@ func main() {
 func parseArgs(args []string) (cliOptions, error) {
 	opts := cliOptions{
 		Server: DefaultWS,
-		API:    DefaultAPI,
 		Port:   defaultLANPort,
 	}
 
@@ -285,16 +282,6 @@ func parseArgs(args []string) (cliOptions, error) {
 			}
 			opts.Server = value
 			opts.ServerSet = true
-
-		case "api":
-			if !hasValue {
-				i++
-				if i >= len(args) {
-					return opts, errors.New("--api requires a value")
-				}
-				value = args[i]
-			}
-			opts.API = value
 
 		case "host":
 			if !hasValue {
@@ -386,12 +373,11 @@ Options:
   --port PORT       LAN websocket port (default: %d)
   --password PASS   Room password (for hosting or joining)
   --server URL      WebSocket server URL (default: %s)
-  --api URL         API server URL (default: %s)
   --online          Discover: show only online rooms
   --local           Discover: show only LAN rooms
   --version         Show version and exit
   --help, -h        Show this help and exit
-`, defaultLANPort, DefaultWS, DefaultAPI)
+`, defaultLANPort, DefaultWS)
 }
 
 func splitFlag(arg string) (name string, value string, hasValue bool) {
@@ -483,19 +469,4 @@ func getInputReader() *bufio.Reader {
 	}
 
 	return bufio.NewReader(os.Stdin)
-}
-
-func fetchNewRoom(apiURL string) string {
-	resp, err := http.Get(apiURL + "/api/new")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return strings.TrimSpace(string(body))
 }

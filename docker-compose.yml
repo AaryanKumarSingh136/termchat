@@ -10,19 +10,6 @@ services:
 
     restart: unless-stopped
 
-  api:
-    image: ghcr.io/ishaan-jindal/termchat/termchat-api:latest
-
-    container_name: termchat-api
-
-    env_file:
-      - .env
-
-    restart: unless-stopped
-
-    depends_on:
-      - websocket
-
   caddy:
     image: caddy:latest
 
@@ -33,10 +20,11 @@ services:
       - "443:443"
 
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
     depends_on:
-      - api
       - websocket
 
     restart: unless-stopped
@@ -56,3 +44,6 @@ services:
 
     restart: unless-stopped
 
+volumes:
+  caddy_data:
+  caddy_config:

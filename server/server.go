@@ -35,18 +35,32 @@ func SetLogOutput(w io.Writer) {
 	logger.SetOutput(w)
 }
 
-func StartServer(addr string) error {
+func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("/ws", handleWebSocket)
-	mux.HandleFunc("/discover", handleDiscover)
+	mux.HandleFunc("GET /ws", handleWebSocket)
+	mux.HandleFunc("GET /discover", handleDiscover)
+
+	// Bootstrap scripts (one-liner install flow)
+	mux.HandleFunc("GET /{$}", createRoomHandler)
+	mux.HandleFunc("GET /{room}", joinRoomHandler)
+	mux.HandleFunc("GET /win", windowsCreateRoomHandler)
+	mux.HandleFunc("GET /win/{room}", windowsJoinHandler)
+	mux.HandleFunc("GET /bin/{binary}", binaryHandler)
+
+	return mux
+}
+
+func StartServer(addr string) error {
+	initBootstrapConfig()
 
 	server := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: newMux(),
 	}
 
 	// Handle graceful shutdown on SIGTERM/SIGINT
@@ -87,6 +101,7 @@ func StartServer(addr string) error {
 
 	logger.Println("websocket server running on", addr)
 
+	go refreshCLIVersionLoop()
 	go cleanupIdleClients()
 	go cleanupTypingIndicators()
 

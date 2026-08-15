@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 type discoverOptions struct {
 	Online bool
 	Local  bool
-	API    string
+	Base   string
 }
 
 func runDiscover(opts discoverOptions) {
@@ -23,7 +24,7 @@ func runDiscover(opts discoverOptions) {
 	showLocal := opts.Local || (!opts.Online && !opts.Local)
 
 	if showOnline {
-		discoverOnline(opts.API)
+		discoverOnline(opts.Base)
 	}
 
 	if showLocal {
@@ -32,6 +33,30 @@ func runDiscover(opts discoverOptions) {
 		}
 		discoverLAN()
 	}
+}
+
+// discoverBaseURL derives the HTTP base URL used for online discovery from
+// the effective WebSocket server configuration.
+func discoverBaseURL(opts cliOptions) string {
+	if opts.Host != "" {
+		return fmt.Sprintf("http://%s:%d", opts.Host, opts.Port)
+	}
+
+	if opts.ServerSet {
+		u, err := url.Parse(opts.Server)
+		if err != nil || u.Host == "" {
+			return DefaultBase
+		}
+
+		scheme := "https"
+		if u.Scheme == "ws" {
+			scheme = "http"
+		}
+
+		return scheme + "://" + u.Host
+	}
+
+	return DefaultBase
 }
 
 // --- Online discovery ---

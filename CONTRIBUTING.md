@@ -43,9 +43,6 @@ go build -o termchat ./cli
 
 # Build the WebSocket server
 go build -o termchat-server ./server/cmd/server
-
-# Build the API server
-go build -o termchat-api ./api
 ```
 
 ### Run
@@ -63,9 +60,8 @@ go run ./cli host
 ```
 termchat/
   cli/          — Terminal UI client (Bubble Tea)
-  server/       — WebSocket server + room management
-  api/          — HTTP API server (Chi router)
-  api/scripts/  — Bootstrap installers (embedded into the API binary)
+  server/       — WebSocket server + room management + bootstrap scripts
+  server/scripts/ — Bootstrap installers (embedded into the server binary)
   shared/       — Shared types, validation, constants
   caddy/        — Reverse proxy config
 ```

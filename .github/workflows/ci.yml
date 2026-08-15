@@ -105,7 +105,6 @@ jobs:
         run: |
           CGO_ENABLED=0 go build -o /tmp/cli${{ matrix.ext }} ./cli
           CGO_ENABLED=0 go build -o /tmp/server${{ matrix.ext }} ./server/cmd/server
-          CGO_ENABLED=0 go build -o /tmp/api${{ matrix.ext }} ./api
 
   # Single check that depends on every other job. Branch protection on main
   # requires `lint-and-test` and `verify` by name; if the matrix grows, this

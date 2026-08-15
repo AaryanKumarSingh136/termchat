@@ -31,10 +31,6 @@ run *args:
 server:
     WS_PORT=8080 go run ./server/cmd/server
 
-# Run the API server locally (port 3000)
-api:
-    API_PORT=3000 PUBLIC_API_URL=http://localhost:3000 GITHUB_REPO=ishaan-jindal/termchat go run ./api
-
 # Format all Go code in place
 fmt:
     gofmt -w .
@@ -75,9 +71,8 @@ test-race:
 # Full CI gate: tidy, fmt, vet, build, race tests
 check: tidy-check fmt-check vet build test-race
 
-# Build both Docker images locally
+# Build the server Docker image locally
 docker:
-    docker build -f Dockerfile.api -t termchat-api:dev .
     docker build -f Dockerfile.server -t termchat-server:dev .
 
 # Start the full deployment stack (docker compose)

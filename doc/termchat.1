@@ -44,9 +44,6 @@ LAN WebSocket port for hosting or joining (default: 8080).
 WebSocket server URL (default: wss://termchat.sacred99.online/ws).
 This option takes priority over \fB\-\-host\fR and \fB\-\-port\fR.
 .TP
-.BR \-\-api " " \fIURL\fR
-API server URL (default: https://termchat.sacred99.online).
-.TP
 .BR \-\-password " " \fIPASS\fR
 Room password for hosting or joining. If joining a locked room without this
 flag, the CLI prompts interactively.
@@ -141,7 +138,7 @@ Join with \fB\-\-room\fR flag:
 Use a custom server:
 .PP
 .RS
-.B termchat \-\-server wss://my.server/ws \-\-api https://my.server
+.B termchat \-\-server wss://my.server/ws
 .RE
 .PP
 Host a LAN room with an auto\-generated room code:

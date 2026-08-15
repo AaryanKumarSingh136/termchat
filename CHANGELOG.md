@@ -2,7 +2,46 @@
 
 ## [Unreleased]
 
+### Removed
+
+- The separate API server is gone. The project is now server + client only:
+  - `api/`, `Dockerfile.api`, and the `api.yml` image workflow were deleted.
+  - The CLI no longer calls `/api/new`; room codes are generated locally with
+    `shared.GenerateRoomCode()`.
+  - The `--api` flag, `main.DefaultAPI` ldflags, and the `TERMCHAT_API_URL`
+    repo variable were removed.
+- The `curl | bash` one-liner install flow moved into the WebSocket server:
+  - Bootstrap scripts live in `server/scripts/` (embedded via `go:embed`).
+  - The server now serves `/`, `/{room}`, `/win`, `/win/{room}` and
+    `/bin/{binary}` (with a binary-name whitelist).
+  - Scripts render `{Room, BaseURL, Version}` from `PUBLIC_BASE_URL` and
+    launch the binary with `--server`, so self-hosted deployments no longer
+    point users at the default server.
+  - The GitHub CLI version cache (5-min refresh) moved to the server, now
+    mutex-guarded and with a client timeout.
+- `docker-compose.yml` is now websocket + caddy + watchtower; the Caddyfile
+  was fixed for the real domain (`termchat.sacred99.online`) with automatic
+  HTTPS and a persistent ACME data volume.
+- `justfile` no longer has an `api` recipe; `just docker` builds the server
+  image only.
+
 ### Fixed
+
+- Docker healthcheck used `/dev/tcp`, which dash (`/bin/sh` on Debian slim)
+  does not support — containers were always reported unhealthy. The server
+  image now installs `curl` and probes `/healthz`.
+- The `websocket.yml` image workflow path filter now includes `go.mod` and
+  `go.sum`, so dependency bumps rebuild the image.
+- The CLI release workflow checks out the requested tag on `workflow_dispatch`
+  instead of building the dispatch ref while publishing `inputs.tag`.
+
+### Added
+
+- The server now serves the bootstrap one-liner (`curl -fsSL <host> | bash`)
+  and PowerShell flow directly; `/bin/{binary}` validates against a whitelist
+  of the 8 published release assets.
+
+### Fixed (from the CI/testing overhaul)
 
 - Critical server crash: concurrent `rooms` map reads in the `set_password`
   and legacy `users` handlers could trigger a fatal "concurrent map read and
@@ -23,10 +62,10 @@
   exact code format (callers normalize first).
 - UTF-8 runes are no longer split mid-sequence when truncating nicknames
   and messages.
-- Bootstrap scripts are now embedded into the API binary (`go:embed`) and
+- Bootstrap scripts are embedded into the server binary (`go:embed`) and
   no longer read from disk at request time.
-- Health check endpoints (`/healthz`) on both the API and WebSocket servers.
-- `api/scripts` moved from the repo root; `go.work` removed — the project is
+- Health check endpoint (`/healthz`) on the WebSocket server.
+- `scripts` moved under `server/scripts`; `go.work` removed — the project is
   a single Go module.
 
 ### CI / Build

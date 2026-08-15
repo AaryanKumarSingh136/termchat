@@ -8,6 +8,8 @@ on:
     paths:
       - "server/**"
       - "shared/**"
+      - "go.mod"
+      - "go.sum"
       - "Dockerfile.server"
       - ".dockerignore"
 
