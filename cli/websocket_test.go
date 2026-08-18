@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -8,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"termchat/shared"
 
 	chatserver "termchat/server"
 
@@ -229,7 +233,11 @@ func TestJoinRoomFlow(t *testing.T) {
 		}
 
 		host.Send <- Message{Type: "set_password", Password: "secret"}
-		time.Sleep(300 * time.Millisecond) // give the server time to process
+
+		// Wait until discovery confirms the room is locked.
+		if err := waitForLocked(addr, "FLOW"); err != nil {
+			t.Fatal(err)
+		}
 
 		// Joining without a password prompts (we feed "secret") and succeeds.
 		conn, err := connectWebSocket(url)
@@ -326,6 +334,41 @@ func TestServerStop(t *testing.T) {
 
 		if time.Now().After(deadline) {
 			t.Fatal("server still listening after Stop")
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitForLocked polls /discover until the room reports HasPassword.
+func waitForLocked(addr, room string) error {
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		resp, err := http.Get("http://" + addr + "/discover")
+		if err != nil {
+			return err
+		}
+
+		var rooms []shared.RoomInfo
+
+		decodeErr := json.NewDecoder(resp.Body).Decode(&rooms)
+		resp.Body.Close()
+
+		if decodeErr == nil {
+			for _, r := range rooms {
+				if r.ID == room {
+					if r.HasPassword {
+						return nil
+					}
+
+					break
+				}
+			}
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("room %s never reported as locked", room)
 		}
 
 		time.Sleep(20 * time.Millisecond)

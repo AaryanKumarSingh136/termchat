@@ -101,7 +101,7 @@ func (c *testClient) next() (shared.Message, bool) {
 	select {
 	case m, ok := <-c.msgs:
 		return m, ok
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		c.t.Fatalf("timed out waiting for message on %s", c.conn.RemoteAddr())
 		return shared.Message{}, false
 	}

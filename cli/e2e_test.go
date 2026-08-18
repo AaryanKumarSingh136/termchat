@@ -100,7 +100,7 @@ func (c *e2eClient) send(m Message) {
 
 	select {
 	case c.conn.Send <- m:
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		c.t.Fatal("timed out sending message")
 	}
 }

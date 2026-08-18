@@ -83,6 +83,13 @@ func newMux() *http.ServeMux {
 func StartServer(addr string) error {
 	initBootstrapConfig()
 
+	// A server instance owns a fresh room registry; the map is package-global
+	// so starting a new server (e.g. tests, host mode) must not inherit rooms
+	// from a previous instance.
+	roomsMutex.Lock()
+	rooms = map[string]*Room{}
+	roomsMutex.Unlock()
+
 	stopMu.Lock()
 	stopCh = make(chan struct{})
 	c := stopCh
@@ -142,9 +149,9 @@ func StartServer(addr string) error {
 
 	logger.Println("websocket server running on", addr)
 
-	go refreshCLIVersionLoop()
-	go cleanupIdleClients()
-	go cleanupTypingIndicators()
+	go refreshCLIVersionLoop(c)
+	go cleanupIdleClients(c)
+	go cleanupTypingIndicators(c)
 
 	return server.ListenAndServe()
 }
