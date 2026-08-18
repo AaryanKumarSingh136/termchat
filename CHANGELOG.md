@@ -53,6 +53,11 @@
 - Health check endpoint (`/healthz`) on the WebSocket server.
 - `scripts` moved under `server/scripts`; `go.work` removed - the project is
   a single Go module.
+- Server lifecycle on shutdown: `Stop()` now blocks until the server has
+  fully drained (listener down, connections closed) and the background
+  loops (CLI version refresh, idle-client and typing cleanup) exit instead
+  of leaking goroutines. Each `StartServer` gets a fresh room registry, so
+  restarts never inherit stale rooms.
 
 ### Added
 
