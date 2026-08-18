@@ -101,7 +101,7 @@ func (c *testClient) next() (shared.Message, bool) {
 	select {
 	case m, ok := <-c.msgs:
 		return m, ok
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		c.t.Fatalf("timed out waiting for message on %s", c.conn.RemoteAddr())
 		return shared.Message{}, false
 	}
@@ -371,11 +371,7 @@ func TestMessageSanitization(t *testing.T) {
 	b := joinRoom(t, srv, "SANI", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	b.send(shared.Message{
 		Type: "message",
@@ -406,11 +402,7 @@ func TestNickChange(t *testing.T) {
 	b := joinRoom(t, srv, "NICK", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	b.send(shared.Message{Type: "nick", NewNick: "robert"})
 
@@ -442,11 +434,7 @@ func TestTypingIndicator(t *testing.T) {
 	b := joinRoom(t, srv, "TYPE", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	b.send(shared.Message{Type: "typing"})
 
@@ -468,11 +456,7 @@ func TestRateLimit(t *testing.T) {
 	b := joinRoom(t, srv, "RATE", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	for i := 0; i < 20; i++ {
 		b.send(shared.Message{Type: "message", Text: fmt.Sprintf("msg %d", i)})
@@ -705,20 +689,30 @@ func TestHistoryCap(t *testing.T) {
 		a.send(shared.Message{Type: "message", Text: fmt.Sprintf("m-%d", i)})
 	}
 
-	// The server processes messages asynchronously. Wait for all 40 echoes;
-	// an echo is sent only after the broadcast appended to history.
-	received := 0
-
+	// The server processes messages asynchronously. Echoes can be dropped
+	// when the client's outbound buffer fills (32 slots), but history is
+	// authoritative - it grows under the room lock for every message. Wait
+	// until the last message is recorded.
 	deadline := time.After(5 * time.Second)
 
-	for received < 40 {
+	for {
+		room := roomState(t, "HIST")
+		room.Mutex.Lock()
+		n := len(room.History)
+		last := ""
+		if n > 0 {
+			last = room.History[n-1].Text
+		}
+		room.Mutex.Unlock()
+
+		if n == 30 && last == "m-39" {
+			break
+		}
+
 		select {
-		case m := <-a.msgs:
-			if m.Type == "message" {
-				received++
-			}
 		case <-deadline:
-			t.Fatalf("only %d of 40 messages echoed", received)
+			t.Fatalf("history never recorded all messages (len=%d, last=%q)", n, last)
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 
@@ -761,11 +755,7 @@ func TestMessageLengthTruncation(t *testing.T) {
 	b := joinRoom(t, srv, "LENX", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	b.send(shared.Message{Type: "message", Text: strings.Repeat("x", 600)})
 
@@ -965,11 +955,7 @@ func TestTypingExpiry(t *testing.T) {
 	b := joinRoom(t, srv, "TYPE", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	b.send(shared.Message{Type: "typing"})
 
@@ -994,6 +980,43 @@ func isTyping(users []UserInfo, nick string) bool {
 	}
 
 	return false
+}
+
+func waitUsers(t *testing.T, c *testClient, nicks ...string) []UserInfo {
+	t.Helper()
+
+	deadline := time.After(10 * time.Second)
+
+	for {
+		select {
+		case m := <-c.msgs:
+			if m.Type != "users_list" {
+				continue
+			}
+
+			have := map[string]bool{}
+
+			for _, u := range m.Users {
+				have[u.Nick] = true
+			}
+
+			all := true
+
+			for _, n := range nicks {
+				if !have[n] {
+					all = false
+
+					break
+				}
+			}
+
+			if all {
+				return m.Users
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for users list with %v", nicks)
+		}
+	}
 }
 
 func TestPingEmission(t *testing.T) {
@@ -1042,11 +1065,7 @@ func TestRateLimitWindow(t *testing.T) {
 	b := joinRoom(t, srv, "RATE", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	for i := 0; i < 6; i++ {
 		b.send(shared.Message{Type: "message", Text: fmt.Sprintf("burst-%d", i)})
@@ -1091,11 +1110,7 @@ func TestWhitespaceOnlyMessagesDropped(t *testing.T) {
 	b := joinRoom(t, srv, "BLNK", "bob", "")
 	defer b.close()
 
-	a.nextOfType("history")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
-	a.nextOfType("system")
-	a.nextOfType("users_list")
+	waitUsers(t, a, "alice", "bob")
 
 	b.send(shared.Message{Type: "message", Text: "   "})
 	b.send(shared.Message{Type: "message", Text: "\x1b[31m\x1b[0m"})

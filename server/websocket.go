@@ -552,13 +552,18 @@ func truncateRunes(s string, max int) string {
 	return string(runes[:max])
 }
 
-func cleanupIdleClients() {
+func cleanupIdleClients(stop <-chan struct{}) {
 	ticker := time.NewTicker(1 * time.Minute)
 
 	defer ticker.Stop()
 
-	for range ticker.C {
-		cleanupIdleClientsOnce()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			cleanupIdleClientsOnce()
+		}
 	}
 }
 
@@ -600,13 +605,18 @@ func cleanupIdleClientsOnce() {
 	}
 }
 
-func cleanupTypingIndicators() {
+func cleanupTypingIndicators(stop <-chan struct{}) {
 	ticker := time.NewTicker(time.Second)
 
 	defer ticker.Stop()
 
-	for range ticker.C {
-		cleanupTypingIndicatorsOnce()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			cleanupTypingIndicatorsOnce()
+		}
 	}
 }
 

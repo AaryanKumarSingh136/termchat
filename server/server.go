@@ -24,8 +24,9 @@ var logger = log.New(os.Stderr, "", log.LstdFlags)
 var (
 	initialPassword string
 
-	stopMu sync.Mutex
-	stopCh chan struct{}
+	stopMu  sync.Mutex
+	stopCh  chan struct{}
+	drainCh chan struct{}
 )
 
 // SetInitialPassword sets a password that will be applied to the first room
@@ -34,11 +35,14 @@ func SetInitialPassword(password string) {
 	initialPassword = password
 }
 
-// Stop gracefully shuts down the server started by StartServer. It is
+// Stop gracefully shuts down the server started by StartServer and blocks
+// until it has fully drained (client connections closed, listener down), so
+// a subsequent StartServer can safely swap the room registry. It is
 // idempotent and safe to call before StartServer.
 func Stop() {
 	stopMu.Lock()
 	c := stopCh
+	d := drainCh
 	stopMu.Unlock()
 
 	if c == nil {
@@ -49,6 +53,10 @@ func Stop() {
 	case <-c:
 	default:
 		close(c)
+	}
+
+	if d != nil {
+		<-d
 	}
 }
 
@@ -83,9 +91,20 @@ func newMux() *http.ServeMux {
 func StartServer(addr string) error {
 	initBootstrapConfig()
 
+	// A server instance owns a fresh room registry. The map is package-global,
+	// so a new server must not inherit rooms from a previous instance. This is
+	// safe because Stop() blocks until the previous server has fully drained:
+	// its clients are disconnected and its rooms are gone, so nothing live is
+	// ever orphaned by the swap.
+	roomsMutex.Lock()
+	rooms = map[string]*Room{}
+	roomsMutex.Unlock()
+
 	stopMu.Lock()
 	stopCh = make(chan struct{})
+	drainCh = make(chan struct{})
 	c := stopCh
+	d := drainCh
 	stopMu.Unlock()
 
 	server := &http.Server{
@@ -95,6 +114,8 @@ func StartServer(addr string) error {
 
 	// Handle graceful shutdown on SIGTERM/SIGINT or Stop()
 	go func() {
+		defer close(d)
+
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
@@ -142,9 +163,9 @@ func StartServer(addr string) error {
 
 	logger.Println("websocket server running on", addr)
 
-	go refreshCLIVersionLoop()
-	go cleanupIdleClients()
-	go cleanupTypingIndicators()
+	go refreshCLIVersionLoop(c)
+	go cleanupIdleClients(c)
+	go cleanupTypingIndicators(c)
 
 	return server.ListenAndServe()
 }

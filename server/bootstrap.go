@@ -43,6 +43,11 @@ var allowedBinaries = map[string]bool{
 }
 
 func initBootstrapConfig() {
+	// Guard against concurrent writes if more than one server ever runs in
+	// this process (the background refresh also writes these).
+	versionMu.Lock()
+	defer versionMu.Unlock()
+
 	githubRepo = envOr("GITHUB_REPO", githubRepo)
 	publicBaseURL = strings.TrimSuffix(envOr("PUBLIC_BASE_URL", publicBaseURL), "/")
 
@@ -147,12 +152,17 @@ func renderScript(w http.ResponseWriter, script, room string) {
 }
 
 func fetchLatestCLIVersion() string {
+	versionMu.RLock()
+	repo := githubRepo
+	base := githubAPIBase
+	versionMu.RUnlock()
+
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	url := fmt.Sprintf(
 		"%s/repos/%s/releases/latest",
-		githubAPIBase,
-		githubRepo,
+		base,
+		repo,
 	)
 
 	resp, err := client.Get(url)
@@ -181,7 +191,7 @@ func fetchLatestCLIVersion() string {
 	return r.TagName
 }
 
-func refreshCLIVersionLoop() {
+func refreshCLIVersionLoop(stop <-chan struct{}) {
 	ticker := time.NewTicker(5 * time.Minute)
 
 	defer ticker.Stop()
@@ -190,7 +200,11 @@ func refreshCLIVersionLoop() {
 	for {
 		refreshCLIVersionOnce()
 
-		<-ticker.C
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

@@ -1,0 +1,55 @@
+name: Verify Gate
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Ref to verify (defaults to the triggering ref)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+
+  gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check go.mod is tidy
+        run: |
+          if ! go mod tidy -diff > /tmp/tidy.diff 2>&1; then
+            echo "::error::go.mod or go.sum is not tidy. Run 'go mod tidy' and commit the result."
+            cat /tmp/tidy.diff
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race detector)
+        run: go test -race ./...
