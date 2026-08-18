@@ -705,20 +705,30 @@ func TestHistoryCap(t *testing.T) {
 		a.send(shared.Message{Type: "message", Text: fmt.Sprintf("m-%d", i)})
 	}
 
-	// The server processes messages asynchronously. Wait for all 40 echoes;
-	// an echo is sent only after the broadcast appended to history.
-	received := 0
-
+	// The server processes messages asynchronously. Echoes can be dropped
+	// when the client's outbound buffer fills (32 slots), but history is
+	// authoritative - it grows under the room lock for every message. Wait
+	// until the last message is recorded.
 	deadline := time.After(5 * time.Second)
 
-	for received < 40 {
+	for {
+		room := roomState(t, "HIST")
+		room.Mutex.Lock()
+		n := len(room.History)
+		last := ""
+		if n > 0 {
+			last = room.History[n-1].Text
+		}
+		room.Mutex.Unlock()
+
+		if n == 30 && last == "m-39" {
+			break
+		}
+
 		select {
-		case m := <-a.msgs:
-			if m.Type == "message" {
-				received++
-			}
 		case <-deadline:
-			t.Fatalf("only %d of 40 messages echoed", received)
+			t.Fatalf("history never recorded all messages (len=%d, last=%q)", n, last)
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 
