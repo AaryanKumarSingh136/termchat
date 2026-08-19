@@ -222,7 +222,7 @@ func parseArgs(args []string) (cliOptions, error) {
 		case "help", "h":
 			opts.Help = true
 
-		case "version":
+		case "version", "v":
 			opts.Version = true
 
 		case "room":
@@ -338,7 +338,7 @@ Options:
   --server URL      WebSocket server URL (default: %s)
   --online          Discover: show only online rooms
   --local           Discover: show only LAN rooms
-  --version         Show version and exit
+  --version, -v         Show version and exit
   --help, -h        Show this help and exit
 `, defaultLANPort, DefaultWS)
 }
