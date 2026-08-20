@@ -20,6 +20,7 @@ import (
 type (
 	Message  = shared.Message
 	UserInfo = shared.UserInfo
+	Reaction = shared.Reaction
 )
 
 var (

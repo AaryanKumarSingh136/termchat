@@ -87,9 +87,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	if !exists {
 		room = &Room{
-			ID:       client.RoomID,
-			Password: initialPassword,
-			Clients:  make(map[*Client]bool),
+			ID:        client.RoomID,
+			Password:  initialPassword,
+			Clients:   make(map[*Client]bool),
+			NextID:    1,
+			Reactions: make(map[int64]map[string]map[*Client]bool),
 		}
 
 		rooms[client.RoomID] = room
@@ -288,12 +290,49 @@ func readPump(client *Client) {
 			continue
 		}
 
+		if msg.Type == "reaction" {
+			handleReaction(client, msg)
+			continue
+		}
+
 		if msg.Type == "message" && msg.Text == "" {
 			continue
 		}
 
 		if msg.Type != "message" {
 			continue
+		}
+
+		// Resolve the reply quote from history; the server is the authority
+		// on quoted text. Unknown targets send the message plain.
+		if msg.ReplyToID != 0 {
+			roomsMutex.RLock()
+			room, exists := rooms[client.RoomID]
+			roomsMutex.RUnlock()
+
+			found := false
+
+			if exists {
+				room.Mutex.Lock()
+
+				for i := range room.History {
+					histMsg := &room.History[i]
+
+					if histMsg.ID == msg.ReplyToID && histMsg.Type == "message" {
+						msg.ReplyToNick = histMsg.Nick
+						msg.ReplyToText = histMsg.Text
+						found = true
+
+						break
+					}
+				}
+
+				room.Mutex.Unlock()
+			}
+
+			if !found {
+				msg.ReplyToID = 0
+			}
 		}
 
 		client.mu.Lock()
@@ -360,10 +399,17 @@ func broadcastToRoom(roomID string, msg Message) {
 	msg.Timestamp = time.Now().UnixMilli()
 
 	if msg.Type == "message" || msg.Type == "system" {
+		msg.ID = room.NextID
+		room.NextID++
 		room.History = append(room.History, msg)
 
 		if len(room.History) > maxHistoryMessages {
+			dropped := room.History[:len(room.History)-maxHistoryMessages]
 			room.History = room.History[len(room.History)-maxHistoryMessages:]
+
+			for _, m := range dropped {
+				delete(room.Reactions, m.ID)
+			}
 		}
 	}
 
@@ -378,6 +424,93 @@ func broadcastToRoom(roomID string, msg Message) {
 	for _, client := range clients {
 		client.trySend(msg)
 	}
+}
+
+// handleReaction toggles the sender's vote on a chat message and broadcasts
+// the updated counts. Invalid names and unknown targets are ignored.
+func handleReaction(client *Client, msg Message) {
+	if !shared.IsValidReaction(msg.Text) || msg.ID <= 0 {
+		return
+	}
+
+	roomsMutex.RLock()
+	room, exists := rooms[client.RoomID]
+	roomsMutex.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	room.Mutex.Lock()
+
+	targetIdx := -1
+
+	for i := range room.History {
+		histMsg := &room.History[i]
+
+		if histMsg.ID == msg.ID && histMsg.Type == "message" {
+			targetIdx = i
+
+			break
+		}
+	}
+
+	if targetIdx == -1 {
+		room.Mutex.Unlock()
+
+		return
+	}
+
+	voters, ok := room.Reactions[msg.ID]
+
+	if !ok {
+		voters = make(map[string]map[*Client]bool)
+		room.Reactions[msg.ID] = voters
+	}
+
+	names, ok := voters[msg.Text]
+
+	if !ok {
+		names = make(map[*Client]bool)
+		voters[msg.Text] = names
+	}
+
+	if names[client] {
+		delete(names, client)
+	} else {
+		names[client] = true
+	}
+
+	if len(names) == 0 {
+		delete(voters, msg.Text)
+	}
+
+	if len(voters) == 0 {
+		delete(room.Reactions, msg.ID)
+	}
+
+	// Iterate the allowlist so broadcast order is deterministic.
+	var reactions []shared.Reaction
+
+	for _, name := range shared.ReactionNames {
+		if set, ok := voters[name]; ok {
+			reactions = append(reactions, shared.Reaction{
+				Name:  name,
+				Count: len(set),
+			})
+		}
+	}
+
+	// Store counts on the history message so replay carries them.
+	room.History[targetIdx].Reactions = reactions
+
+	room.Mutex.Unlock()
+
+	broadcastToRoom(client.RoomID, Message{
+		Type:      "reaction",
+		ID:        msg.ID,
+		Reactions: reactions,
+	})
 }
 
 func cleanupClient(client *Client) {

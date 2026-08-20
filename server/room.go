@@ -8,7 +8,15 @@ type Room struct {
 	Host     *Client
 	Clients  map[*Client]bool
 	History  []Message
-	Mutex    sync.Mutex
+
+	// NextID is the next message ID to stamp, guarded by Mutex.
+	NextID int64
+
+	// Reactions maps message ID -> reaction name -> voter set, so a user can
+	// toggle their own vote. Guarded by Mutex.
+	Reactions map[int64]map[string]map[*Client]bool
+
+	Mutex sync.Mutex
 }
 
 var (

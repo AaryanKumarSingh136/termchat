@@ -1123,3 +1123,233 @@ func TestWhitespaceOnlyMessagesDropped(t *testing.T) {
 	case <-time.After(400 * time.Millisecond):
 	}
 }
+
+func TestMessageIDOrdering(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "IDRO", "alice", "")
+	defer a.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	b := joinRoom(t, srv, "IDRO", "bob", "")
+	defer b.close()
+
+	b.nextOfType("history")
+	b.nextOfType("system")
+	b.nextOfType("users_list")
+
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	b.send(shared.Message{Type: "message", Text: "one"})
+	b.send(shared.Message{Type: "message", Text: "two"})
+	b.send(shared.Message{Type: "message", Text: "three"})
+
+	want := int64(3)
+
+	for _, text := range []string{"one", "two", "three"} {
+		m := a.nextOfType("message")
+
+		if m.Text != text || m.ID != want {
+			t.Errorf("message = %+v, want text %q id %d", m, text, want)
+		}
+
+		want++
+	}
+
+	// A late joiner replays history with the same IDs: 2 join system
+	// messages then the 3 chat messages.
+	c := joinRoom(t, srv, "IDRO", "carol", "")
+	defer c.close()
+
+	hist := c.nextOfType("history")
+
+	if len(hist.Messages) != 5 {
+		t.Fatalf("history = %d messages, want 5", len(hist.Messages))
+	}
+
+	for i, m := range hist.Messages {
+		if m.ID != int64(i+1) {
+			t.Errorf("history[%d].ID = %d, want %d", i, m.ID, i+1)
+		}
+	}
+}
+
+func TestReplyResolution(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "REPL", "alice", "")
+	defer a.close()
+
+	b := joinRoom(t, srv, "REPL", "bob", "")
+	defer b.close()
+
+	waitUsers(t, a, "alice", "bob")
+
+	b.send(shared.Message{Type: "message", Text: "original"})
+
+	b.nextOfType("message")
+	target := a.nextOfType("message")
+
+	if target.ID == 0 {
+		t.Fatal("message has no ID")
+	}
+
+	// Alice replies to bob's message; the server resolves the quote.
+	a.send(shared.Message{Type: "message", Text: "replying", ReplyToID: target.ID})
+
+	reply := b.nextOfType("message")
+
+	if reply.ReplyToID != target.ID {
+		t.Errorf("reply.ReplyToID = %d, want %d", reply.ReplyToID, target.ID)
+	}
+
+	if reply.ReplyToNick != "bob" || reply.ReplyToText != "original" {
+		t.Errorf("resolved quote = %q/%q, want bob/original", reply.ReplyToNick, reply.ReplyToText)
+	}
+
+	// Unknown targets deliver the message plain.
+	a.send(shared.Message{Type: "message", Text: "ghost", ReplyToID: 99999})
+
+	plain := b.nextOfType("message")
+
+	if plain.ReplyToID != 0 || plain.ReplyToNick != "" || plain.ReplyToText != "" {
+		t.Errorf("unknown-target reply = %+v, want plain message", plain)
+	}
+
+	// System messages are not quoteable.
+	a.send(shared.Message{Type: "message", Text: "sys", ReplyToID: 2})
+
+	plain = b.nextOfType("message")
+
+	if plain.ReplyToID != 0 {
+		t.Errorf("system-target reply = %+v, want plain message", plain)
+	}
+}
+
+func TestReactionToggleAndCounts(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "RACT", "alice", "")
+	defer a.close()
+
+	b := joinRoom(t, srv, "RACT", "bob", "")
+	defer b.close()
+
+	waitUsers(t, a, "alice", "bob")
+
+	a.send(shared.Message{Type: "message", Text: "ping"})
+
+	target := b.nextOfType("message")
+
+	if target.ID == 0 {
+		t.Fatal("message has no ID")
+	}
+
+	// Bob reacts +1; both clients see the count.
+	b.send(shared.Message{Type: "reaction", ID: target.ID, Text: "+1"})
+
+	a.nextOfType("reaction")
+	b.nextOfType("reaction")
+
+	// Alice reacts too: count 2.
+	a.send(shared.Message{Type: "reaction", ID: target.ID, Text: "+1"})
+
+	a.nextOfType("reaction")
+	update := b.nextOfType("reaction")
+
+	if len(update.Reactions) != 1 || update.Reactions[0].Count != 2 {
+		t.Errorf("reaction update = %+v, want +1 x2", update)
+	}
+
+	// Bob toggles off: count 1.
+	b.send(shared.Message{Type: "reaction", ID: target.ID, Text: "+1"})
+
+	b.nextOfType("reaction")
+	update = a.nextOfType("reaction")
+
+	if len(update.Reactions) != 1 || update.Reactions[0].Count != 1 {
+		t.Errorf("reaction update = %+v, want +1 x1", update)
+	}
+
+	// Last voter toggles off: the message has no reactions left.
+	a.send(shared.Message{Type: "reaction", ID: target.ID, Text: "+1"})
+
+	a.nextOfType("reaction")
+	update = b.nextOfType("reaction")
+
+	if len(update.Reactions) != 0 {
+		t.Errorf("reaction update = %+v, want empty", update)
+	}
+}
+
+func TestReactionInvalidTargetsIgnored(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "RACI", "alice", "")
+	defer a.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	// Unknown message ID, unknown reaction name, and system message target.
+	a.send(shared.Message{Type: "reaction", ID: 999, Text: "+1"})
+	a.send(shared.Message{Type: "reaction", ID: 1, Text: "bogus"})
+	a.send(shared.Message{Type: "reaction", ID: 1, Text: "+1"})
+
+	select {
+	case m := <-a.msgs:
+		if m.Type == "reaction" {
+			t.Fatalf("unexpected reaction broadcast: %+v", m)
+		}
+	case <-time.After(400 * time.Millisecond):
+	}
+}
+
+func TestReactionReplayInHistory(t *testing.T) {
+	srv := startTestServer(t)
+
+	a := joinRoom(t, srv, "RARP", "alice", "")
+	defer a.close()
+
+	a.nextOfType("history")
+	a.nextOfType("system")
+	a.nextOfType("users_list")
+
+	a.send(shared.Message{Type: "message", Text: "ping"})
+
+	target := a.nextOfType("message")
+
+	a.send(shared.Message{Type: "reaction", ID: target.ID, Text: "heart"})
+	a.nextOfType("reaction")
+
+	// A late joiner replays history with reactions embedded.
+	b := joinRoom(t, srv, "RARP", "bob", "")
+	defer b.close()
+
+	hist := b.nextOfType("history")
+
+	if len(hist.Messages) != 2 {
+		t.Fatalf("history = %d messages, want 2", len(hist.Messages))
+	}
+
+	var ping *shared.Message
+
+	for i := range hist.Messages {
+		if hist.Messages[i].Text == "ping" {
+			ping = &hist.Messages[i]
+		}
+	}
+
+	if ping == nil {
+		t.Fatal("ping message missing from history")
+	}
+
+	if len(ping.Reactions) != 1 || ping.Reactions[0].Name != "heart" || ping.Reactions[0].Count != 1 {
+		t.Errorf("replayed reactions = %+v, want heart x1", ping.Reactions)
+	}
+}

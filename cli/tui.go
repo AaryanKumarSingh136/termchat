@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,11 +43,21 @@ var (
 
 type IncomingMessage Message
 
+// chatLine holds one rendered chat message; the raw Message is kept so the
+// line can be re-rendered when its reactions change.
+type chatLine struct {
+	msg      Message
+	rendered string
+}
+
 type Model struct {
 	conn *Connection
 
-	messages []string
+	messages []chatLine
 	input    textarea.Model
+
+	// msgIndex maps a message ID to its index in messages.
+	msgIndex map[int64]int
 
 	nick      string
 	room      string
@@ -86,7 +97,8 @@ func NewModel(conn *Connection, nick string, room string) Model {
 
 	return Model{
 		conn:         conn,
-		messages:     []string{},
+		messages:     []chatLine{},
+		msgIndex:     map[int64]int{},
 		input:        ti,
 		nick:         nick,
 		room:         room,
@@ -214,6 +226,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "system", "message":
 			appendFormattedMessage(&m, Message(msg))
 
+		case "reaction":
+			idx, ok := m.msgIndex[msg.ID]
+			if ok {
+				m.messages[idx].msg.Reactions = msg.Reactions
+				m.messages[idx].rendered = renderMessage(&m, m.messages[idx].msg)
+			}
+
 		case "users_list":
 			m.users = msg.Users
 
@@ -225,7 +244,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		wasAtBottom := m.autoScroll || m.viewport.AtBottom()
 
-		m.viewport.SetContent(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(strings.Join(renderedLines(&m), "\n"))
 
 		if wasAtBottom {
 			m.viewport.GotoBottom()
@@ -263,7 +282,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		inputWidth := max(m.width-14, 20)
 		m.input.SetWidth(inputWidth)
 
-		m.viewport.SetContent(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(strings.Join(renderedLines(&m), "\n"))
 
 		return m, nil
 	}
@@ -399,56 +418,144 @@ func appendFormattedMessage(m *Model, msg Message) {
 	switch msg.Type {
 
 	case "system":
-		plain := "[system] " + msg.Text
-
-		if m.viewport.Width > 0 && runtime.GOARCH != "386" {
-			plain = wordwrap.String(plain, m.viewport.Width)
-		}
-
-		formatted := systemStyle.Render(plain)
-
-		m.messages = append(m.messages, formatted)
+		m.messages = append(m.messages, chatLine{
+			msg:      msg,
+			rendered: renderSystemMessage(m, msg),
+		})
 
 	case "message":
-		mentioned := strings.Contains(
-			strings.ToLower(msg.Text),
-			"@"+strings.ToLower(m.nick),
-		)
-		nickStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(msg.Color)).
-			Bold(true)
+		m.messages = append(m.messages, chatLine{
+			msg:      msg,
+			rendered: renderMessage(m, msg),
+		})
 
-		prefix := msg.Nick + ": "
-		availableWidth := max(m.viewport.Width-len(prefix), 10)
-		wrapped := msg.Text
-		if runtime.GOARCH != "386" {
-			wrapped = wordwrap.String(msg.Text, availableWidth)
-		}
-		lines := strings.Split(wrapped, "\n")
-
-		if mentioned {
-			nickStyle = nickStyle.Background(mentionStyle.GetBackground())
-			for i := range lines {
-				if i == 0 {
-					lines[i] = nickStyle.Render(msg.Nick) + mentionStyle.Render(": "+lines[i])
-				} else {
-					lines[i] = mentionStyle.Render(strings.Repeat(" ", len(prefix)) + lines[i])
-				}
-			}
+		if isMention(msg, m.nick) {
 			print("\a")
-		} else {
-			renderedNick := nickStyle.Render(msg.Nick)
-			for i := range lines {
-				if i == 0 {
-					lines[i] = renderedNick + ": " + lines[i]
-				} else {
-					lines[i] = strings.Repeat(" ", len(prefix)) + lines[i]
-				}
-			}
 		}
 
-		m.messages = append(m.messages, strings.Join(lines, "\n"))
+		if msg.ID != 0 {
+			m.msgIndex[msg.ID] = len(m.messages) - 1
+		}
 	}
+}
+
+func renderedLines(m *Model) []string {
+	lines := make([]string, 0, len(m.messages))
+
+	for _, line := range m.messages {
+		lines = append(lines, line.rendered)
+	}
+
+	return lines
+}
+
+func isMention(msg Message, nick string) bool {
+	return strings.Contains(
+		strings.ToLower(msg.Text),
+		"@"+strings.ToLower(nick),
+	)
+}
+
+func renderSystemMessage(m *Model, msg Message) string {
+	plain := "[system] " + msg.Text
+
+	if m.viewport.Width > 0 && runtime.GOARCH != "386" {
+		plain = wordwrap.String(plain, m.viewport.Width)
+	}
+
+	return systemStyle.Render(plain)
+}
+
+func renderMessage(m *Model, msg Message) string {
+	mentioned := isMention(msg, m.nick)
+
+	idPrefix := ""
+	if msg.ID != 0 {
+		idPrefix = fmt.Sprintf("#%d ", msg.ID)
+	}
+
+	nickStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(msg.Color)).
+		Bold(true)
+
+	prefix := idPrefix + msg.Nick + ": "
+	availableWidth := max(m.viewport.Width-len(prefix), 10)
+	wrapped := msg.Text
+	if runtime.GOARCH != "386" {
+		wrapped = wordwrap.String(msg.Text, availableWidth)
+	}
+	lines := strings.Split(wrapped, "\n")
+
+	if mentioned {
+		nickStyle = nickStyle.Background(mentionStyle.GetBackground())
+		for i := range lines {
+			if i == 0 {
+				lines[i] = systemStyle.Render(idPrefix) + nickStyle.Render(msg.Nick) + mentionStyle.Render(": "+lines[i])
+			} else {
+				lines[i] = mentionStyle.Render(strings.Repeat(" ", len(prefix)) + lines[i])
+			}
+		}
+	} else {
+		renderedNick := nickStyle.Render(msg.Nick)
+		for i := range lines {
+			if i == 0 {
+				lines[i] = systemStyle.Render(idPrefix) + renderedNick + ": " + lines[i]
+			} else {
+				lines[i] = strings.Repeat(" ", len(prefix)) + lines[i]
+			}
+		}
+	}
+
+	var out []string
+
+	if quote := formatQuote(msg, availableWidth); quote != "" {
+		out = append(out, quote)
+	}
+
+	out = append(out, lines...)
+
+	if len(msg.Reactions) > 0 {
+		last := len(out) - 1
+		out[last] += systemStyle.Render("  " + formatReactions(msg.Reactions))
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// formatQuote renders the quoted message of a reply as a dim quote line, or
+// an empty string when the message is not a reply.
+func formatQuote(msg Message, width int) string {
+	if msg.ReplyToID == 0 {
+		return ""
+	}
+
+	quote := "> " + msg.ReplyToNick + ": " + msg.ReplyToText
+
+	if width > 0 && runtime.GOARCH != "386" {
+		quote = wordwrap.String(quote, width)
+	}
+
+	return systemStyle.Render(quote)
+}
+
+// formatReactions renders counts like "+1 x2, heart" with a leading blank
+// line separator: " [+1 x2]".
+func formatReactions(reactions []Reaction) string {
+	if len(reactions) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(reactions))
+
+	for _, r := range reactions {
+		if r.Count > 1 {
+			parts = append(parts, fmt.Sprintf("%s x%d", r.Name, r.Count))
+		} else {
+			parts = append(parts, r.Name)
+		}
+	}
+
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 func handleCommand(m *Model, input string) (handled bool, quit bool) {
@@ -459,7 +566,8 @@ func handleCommand(m *Model, input string) (handled bool, quit bool) {
 	switch cmd {
 
 	case "/clear":
-		m.messages = []string{}
+		m.messages = []chatLine{}
+		m.msgIndex = map[int64]int{}
 		m.viewport.SetContent("")
 		return true, false
 
@@ -470,12 +578,14 @@ func handleCommand(m *Model, input string) (handled bool, quit bool) {
 	case "/help":
 		m.messages = append(
 			m.messages,
-			systemStyle.Render(
-				"Commands: /help /clear /nick /color /password /quit",
-			),
+			chatLine{
+				rendered: systemStyle.Render(
+					"Commands: /help /clear /nick /color /password /reply /react /quit",
+				),
+			},
 		)
 
-		m.viewport.SetContent(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(strings.Join(renderedLines(m), "\n"))
 		m.viewport.GotoBottom()
 
 		return true, false
@@ -509,10 +619,12 @@ func handleCommand(m *Model, input string) (handled bool, quit bool) {
 		if !shared.IsValidHexColor(color) {
 			m.messages = append(
 				m.messages,
-				systemStyle.Render("Invalid hex color"),
+				chatLine{
+					rendered: systemStyle.Render("Invalid hex color"),
+				},
 			)
 
-			m.viewport.SetContent(strings.Join(m.messages, "\n"))
+			m.viewport.SetContent(strings.Join(renderedLines(m), "\n"))
 			m.viewport.GotoBottom()
 
 			return true, false
@@ -550,6 +662,68 @@ func handleCommand(m *Model, input string) (handled bool, quit bool) {
 		case m.conn.Send <- Message{
 			Type:     "set_password",
 			Password: newPass,
+		}:
+		default:
+		}
+
+		return true, false
+	case "/reply":
+		if len(parts) < 3 {
+			return true, false
+		}
+
+		id, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return true, false
+		}
+
+		text := strings.TrimSpace(strings.Join(parts[2:], " "))
+		if text == "" {
+			return true, false
+		}
+
+		select {
+		case m.conn.Send <- Message{
+			Type:      "message",
+			Text:      text,
+			ReplyToID: id,
+		}:
+		default:
+		}
+
+		return true, false
+
+	case "/react":
+		if len(parts) < 3 {
+			return true, false
+		}
+
+		id, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return true, false
+		}
+
+		name := parts[2]
+
+		if !shared.IsValidReaction(name) {
+			m.messages = append(
+				m.messages,
+				chatLine{
+					rendered: systemStyle.Render("Invalid reaction: " + name),
+				},
+			)
+
+			m.viewport.SetContent(strings.Join(renderedLines(m), "\n"))
+			m.viewport.GotoBottom()
+
+			return true, false
+		}
+
+		select {
+		case m.conn.Send <- Message{
+			Type: "reaction",
+			ID:   id,
+			Text: name,
 		}:
 		default:
 		}

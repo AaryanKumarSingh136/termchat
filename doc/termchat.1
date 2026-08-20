@@ -94,6 +94,14 @@ Set or change the room password (host only).
 .B /password
 Remove the room password and unlock the room (host only).
 .TP
+.B /reply \fIID\fR \fIMESSAGE\fR
+Send \fIMESSAGE\fR quoting the chat message with the given ID. The quoted
+message is rendered as a quote line above the reply.
+.TP
+.B /react \fIID\fR \fIREACTION\fR
+Toggle a reaction on the chat message with the given ID. Reacting again
+removes it. Supported names: +1, -1, laugh, heart, wow, eyes, fire, clap.
+.TP
 .B /quit
 Exit the room.
 .SH KEYBINDINGS
