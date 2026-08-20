@@ -4,6 +4,7 @@
 
 ### Added
 
+- `-v` as a shorthand for `--version` in the CLI.
 - Server-stamped message IDs: every chat message carries an ID (e.g. `#7`),
   shown in the TUI and preserved in history replay.
 - `/reply ID MESSAGE` quotes a message; the server resolves the quoted
