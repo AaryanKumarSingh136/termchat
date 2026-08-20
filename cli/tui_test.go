@@ -122,7 +122,7 @@ func TestCommandColorInvalid(t *testing.T) {
 	found := false
 
 	for _, line := range m.messages {
-		if strings.Contains(line, "Invalid hex color") {
+		if strings.Contains(line.rendered, "Invalid hex color") {
 			found = true
 		}
 	}
@@ -134,7 +134,7 @@ func TestCommandColorInvalid(t *testing.T) {
 
 func TestCommandClear(t *testing.T) {
 	m := testModel()
-	m.messages = []string{"one", "two"}
+	m.messages = []chatLine{{rendered: "one"}, {rendered: "two"}}
 
 	handled, _ := handleCommand(&m, "/clear")
 
@@ -160,8 +160,8 @@ func TestCommandHelp(t *testing.T) {
 		t.Fatalf("messages = %d, want 1", len(m.messages))
 	}
 
-	if !strings.Contains(m.messages[0], "/password") {
-		t.Errorf("help text = %q, want command list", m.messages[0])
+	if !strings.Contains(m.messages[0].rendered, "/password") {
+		t.Errorf("help text = %q, want command list", m.messages[0].rendered)
 	}
 }
 
@@ -314,8 +314,8 @@ func TestIncomingMessageAppended(t *testing.T) {
 		t.Fatalf("messages = %d, want 1", len(m.messages))
 	}
 
-	if !strings.Contains(m.messages[0], "bob") || !strings.Contains(m.messages[0], "hello") {
-		t.Errorf("rendered = %q, want bob: hello", m.messages[0])
+	if !strings.Contains(m.messages[0].rendered, "bob") || !strings.Contains(m.messages[0].rendered, "hello") {
+		t.Errorf("rendered = %q, want bob: hello", m.messages[0].rendered)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestIncomingSystemAppended(t *testing.T) {
 
 	m, _ = update(t, m, IncomingMessage(Message{Type: "system", Text: "bob joined the room"}))
 
-	if len(m.messages) != 1 || !strings.Contains(m.messages[0], "[system]") {
+	if len(m.messages) != 1 || !strings.Contains(m.messages[0].rendered, "[system]") {
 		t.Errorf("messages = %+v, want [system] line", m.messages)
 	}
 }
@@ -374,8 +374,8 @@ func TestMentionDetection(t *testing.T) {
 
 	// Mention styling applies an ANSI background (48); plain nicks only
 	// use foreground color (38).
-	if !strings.Contains(m.messages[0], "48;5;255") {
-		t.Errorf("mention line has no background styling: %q", m.messages[0])
+	if !strings.Contains(m.messages[0].rendered, "48;5;255") {
+		t.Errorf("mention line has no background styling: %q", m.messages[0].rendered)
 	}
 }
 
@@ -386,8 +386,8 @@ func TestMentionCaseInsensitive(t *testing.T) {
 
 	m, _ = update(t, m, IncomingMessage(Message{Type: "message", Nick: "bob", Text: "hey @ALICE"}))
 
-	if len(m.messages) != 1 || !strings.Contains(m.messages[0], "48;5;255") {
-		t.Errorf("case-insensitive mention not styled: %q", m.messages)
+	if len(m.messages) != 1 || !strings.Contains(m.messages[0].rendered, "48;5;255") {
+		t.Errorf("case-insensitive mention not styled: %q", m.messages[0].rendered)
 	}
 }
 
@@ -402,8 +402,8 @@ func TestNoMentionNoBellStyling(t *testing.T) {
 		t.Fatal("plain message not rendered")
 	}
 
-	if strings.Contains(m.messages[0], "48;5;255") {
-		t.Errorf("plain message has mention background: %q", m.messages[0])
+	if strings.Contains(m.messages[0].rendered, "48;5;255") {
+		t.Errorf("plain message has mention background: %q", m.messages[0].rendered)
 	}
 }
 
@@ -460,5 +460,174 @@ func TestQuitClearsTerminal(t *testing.T) {
 
 	if !handled || !quit {
 		t.Fatalf("handled = %v, quit = %v", handled, quit)
+	}
+}
+
+func TestCommandReply(t *testing.T) {
+	m := testModel()
+
+	handled, quit := handleCommand(&m, "/reply 3 hello world")
+
+	if !handled || quit {
+		t.Fatalf("handled = %v, quit = %v", handled, quit)
+	}
+
+	msgs := drainSend(t, m)
+
+	if len(msgs) != 1 {
+		t.Fatalf("sent = %+v, want single reply message", msgs)
+	}
+
+	if msgs[0].Type != "message" || msgs[0].Text != "hello world" || msgs[0].ReplyToID != 3 {
+		t.Fatalf("sent = %+v, want message replying to 3", msgs)
+	}
+}
+
+func TestCommandReplyMissingArgs(t *testing.T) {
+	m := testModel()
+
+	for _, input := range []string{"/reply", "/reply 3", "/reply abc hi", "/reply 3   "} {
+		handled, _ := handleCommand(&m, input)
+
+		if !handled {
+			t.Fatalf("%q not handled", input)
+		}
+
+		if msgs := drainSend(t, m); len(msgs) != 0 {
+			t.Fatalf("%q sent = %+v, want no message", input, msgs)
+		}
+	}
+}
+
+func TestCommandReact(t *testing.T) {
+	m := testModel()
+
+	handled, quit := handleCommand(&m, "/react 3 +1")
+
+	if !handled || quit {
+		t.Fatalf("handled = %v, quit = %v", handled, quit)
+	}
+
+	msgs := drainSend(t, m)
+
+	if len(msgs) != 1 || msgs[0].Type != "reaction" || msgs[0].ID != 3 || msgs[0].Text != "+1" {
+		t.Fatalf("sent = %+v, want reaction +1 on 3", msgs)
+	}
+}
+
+func TestCommandReactInvalid(t *testing.T) {
+	m := testModel()
+
+	handled, _ := handleCommand(&m, "/react 3 bogus")
+
+	if !handled {
+		t.Fatal("expected handled")
+	}
+
+	if msgs := drainSend(t, m); len(msgs) != 0 {
+		t.Fatalf("sent = %+v, want no message", msgs)
+	}
+
+	found := false
+
+	for _, line := range m.messages {
+		if strings.Contains(line.rendered, "Invalid reaction") {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Error("no invalid-reaction feedback shown")
+	}
+}
+
+func TestMessageIDDisplay(t *testing.T) {
+	m := testModel()
+
+	m, _ = update(t, m, IncomingMessage(Message{Type: "message", ID: 7, Nick: "bob", Text: "hello"}))
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(m.messages))
+	}
+
+	if !strings.Contains(m.messages[0].rendered, "#7") {
+		t.Errorf("rendered = %q, want #7 prefix", m.messages[0].rendered)
+	}
+
+	if m.msgIndex[7] != 0 {
+		t.Errorf("msgIndex[7] = %d, want 0", m.msgIndex[7])
+	}
+}
+
+func TestReplyQuoteRendering(t *testing.T) {
+	m := testModel()
+
+	m, _ = update(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	m, _ = update(t, m, IncomingMessage(Message{
+		Type:        "message",
+		ID:          9,
+		Nick:        "alice",
+		Text:        "agreed",
+		ReplyToID:   7,
+		ReplyToNick: "bob",
+		ReplyToText: "hello world",
+	}))
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(m.messages))
+	}
+
+	rendered := m.messages[0].rendered
+
+	if !strings.Contains(rendered, "> bob: hello world") {
+		t.Errorf("rendered = %q, want quote line", rendered)
+	}
+
+	if !strings.Contains(rendered, "agreed") {
+		t.Errorf("rendered = %q, want reply text", rendered)
+	}
+}
+
+func TestReactionRendering(t *testing.T) {
+	m := testModel()
+
+	m, _ = update(t, m, IncomingMessage(Message{
+		Type: "message",
+		ID:   7,
+		Nick: "bob",
+		Text: "hello",
+		Reactions: []Reaction{
+			{Name: "+1", Count: 2},
+			{Name: "laugh", Count: 1},
+		},
+	}))
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(m.messages))
+	}
+
+	if !strings.Contains(m.messages[0].rendered, "[+1 x2, laugh]") {
+		t.Errorf("rendered = %q, want reaction suffix", m.messages[0].rendered)
+	}
+}
+
+func TestReactionUpdateRerenders(t *testing.T) {
+	m := testModel()
+
+	m, _ = update(t, m, IncomingMessage(Message{Type: "message", ID: 7, Nick: "bob", Text: "hello"}))
+
+	m, _ = update(t, m, IncomingMessage(Message{
+		Type:      "reaction",
+		ID:        7,
+		Reactions: []Reaction{{Name: "+1", Count: 2}},
+	}))
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(m.messages))
+	}
+
+	if !strings.Contains(m.messages[0].rendered, "[+1 x2]") {
+		t.Errorf("rendered = %q, want reaction suffix after update", m.messages[0].rendered)
 	}
 }

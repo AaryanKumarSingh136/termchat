@@ -1,16 +1,39 @@
 package shared
 
 type Message struct {
-	Type      string     `json:"type"`
-	Nick      string     `json:"nick,omitempty"`
-	Room      string     `json:"room,omitempty"`
-	Text      string     `json:"text,omitempty"`
-	NewNick   string     `json:"new_nick,omitempty"`
-	Color     string     `json:"color,omitempty"`
-	Password  string     `json:"password,omitempty"`
-	Timestamp int64      `json:"timestamp,omitempty"`
-	Messages  []Message  `json:"messages,omitempty"`
-	Users     []UserInfo `json:"users,omitempty"`
+	ID          int64      `json:"id"`
+	Type        string     `json:"type"`
+	Nick        string     `json:"nick,omitempty"`
+	Room        string     `json:"room,omitempty"`
+	Text        string     `json:"text,omitempty"`
+	ReplyToID   int64      `json:"reply_to_id,omitempty"`
+	ReplyToNick string     `json:"reply_to_nick,omitempty"`
+	ReplyToText string     `json:"reply_to_text,omitempty"`
+	Reactions   []Reaction `json:"reactions,omitempty"`
+	NewNick     string     `json:"new_nick,omitempty"`
+	Color       string     `json:"color,omitempty"`
+	Password    string     `json:"password,omitempty"`
+	Timestamp   int64      `json:"timestamp,omitempty"`
+	Messages    []Message  `json:"messages,omitempty"`
+	Users       []UserInfo `json:"users,omitempty"`
+}
+
+type Reaction struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// ReactionNames is the fixed set of reaction names a client may send.
+var ReactionNames = []string{"+1", "-1", "laugh", "heart", "wow", "eyes", "fire", "clap"}
+
+func IsValidReaction(name string) bool {
+	for _, n := range ReactionNames {
+		if n == name {
+			return true
+		}
+	}
+
+	return false
 }
 
 type UserInfo struct {

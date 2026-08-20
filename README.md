@@ -107,7 +107,13 @@ termchat discover --online | --local        # filter
 ```
 
 In-room commands: `/help`, `/clear`, `/nick NAME`, `/color #HEX`,
-`/password [NEWPASS]` (host only), `/quit`.
+`/password [NEWPASS]` (host only), `/reply ID MESSAGE` (quote a message),
+`/react ID REACTION` (react to a message), `/quit`.
+
+Each chat message is tagged with its ID (e.g. `#7 bob: hello world`), so
+`/reply 7 ...` quotes it and `/react 7 +1` reacts to it. Reactions are
+per-user toggles; supported names: `+1`, `-1`, `laugh`, `heart`, `wow`,
+`eyes`, `fire`, `clap`.
 
 ## LAN Host Mode
 

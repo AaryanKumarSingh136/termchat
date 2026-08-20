@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Server-stamped message IDs: every chat message carries an ID (e.g. `#7`),
+  shown in the TUI and preserved in history replay.
+- `/reply ID MESSAGE` quotes a message; the server resolves the quoted
+  nick/text from history and the TUI renders it as a quote line.
+- `/react ID REACTION` toggles per-user reactions, rendered inline as
+  `[+1 x2]` and included in history replay. Supported names: +1, -1, laugh,
+  heart, wow, eyes, fire, clap.
+
 ## [cli-v2.0.0] - 2026-08-18
 
 ### Removed
